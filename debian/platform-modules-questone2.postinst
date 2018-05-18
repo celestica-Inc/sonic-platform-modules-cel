@@ -1,3 +1,3 @@
-# Enable high temp logger
 systemctl enable sellog.timer
 systemctl start sellog.timer
+service platform-modules-questone2 start

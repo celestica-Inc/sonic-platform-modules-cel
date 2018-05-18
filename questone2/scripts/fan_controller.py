@@ -34,7 +34,7 @@ def cli():
 @cli.command()
 def version():
     """Display version info"""
-    click.echo("v0.1 by Mud")
+    click.echo("Version 1.0")
 
 # 'status' subcommand
 @cli.command()
