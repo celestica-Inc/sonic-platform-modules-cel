@@ -7,3 +7,4 @@ else
     echo "ipmitool is not installed"
 
 fi
+

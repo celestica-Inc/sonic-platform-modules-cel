@@ -1,2 +1,3 @@
 silverstone/cfg/silverstone-modules.conf etc/modules-load.d
 questone2/scripts/sensors usr/bin
+
