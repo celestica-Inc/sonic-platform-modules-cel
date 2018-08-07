@@ -22,6 +22,7 @@ start)
         modprobe baseboard
         modprobe switchboard
         modprobe mc24lc64t
+        modprobe ipmi_devintf
 
         # Instantiate TLV EEPROM device on I801 bus 
         devname=`cat /sys/bus/i2c/devices/i2c-0/name`
