@@ -2,7 +2,7 @@
 
 if [ -x "$(command -v ipmitool)" ] ; then
     echo "SENSOR           | VALUE      | UNITS      | STATE | LO NOREC  | LO CRIT   | LO NOCRIT | UP NOCRIT | UP CRIT   | UP NOREC"
-	ipmitool sensor list full
+    ipmitool sensor list full
 else
     echo "ipmitool is not installed"
 
