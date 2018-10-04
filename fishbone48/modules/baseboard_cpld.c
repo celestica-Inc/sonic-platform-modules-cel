@@ -36,8 +36,8 @@
 #define VERSION_ADDR 0xA100
 #define SCRATCH_ADDR 0xA101
 #define SYS_LED_ADDR 0xA162
-#define ALM_LED_ADDR 0xA163
-#define CPLD_REGISTER_SIZE 0x76
+
+#define CPLD_REGISTER_SIZE 0x7C
 
 struct cpld_b_data {
     struct mutex       cpld_lock;
@@ -307,108 +307,6 @@ static ssize_t sys_led_color_store(struct device *dev, struct device_attribute *
 }
 static DEVICE_ATTR_RW(sys_led_color);
 
-/**
- * Show alarm led status - solid/1K/4K
- * @param  dev     kernel device
- * @param  devattr kernel device attribute
- * @param  buf     buffer for get value
- * @return         Hex string read from scratch register.
- */
-static ssize_t alarm_led_show(struct device *dev, struct device_attribute *devattr,
-                char *buf)
-{
-    unsigned char data = 0;
-    mutex_lock(&cpld_data->cpld_lock);
-    data = inb(ALM_LED_ADDR);
-    mutex_unlock(&cpld_data->cpld_lock);
-    data = data & 0x3;
-    return sprintf(buf, "%s\n",
-            data == 0x2 ? "4k" : data == 0x01 ? "1k" : "solid");
-}
-
-/**
- * Set the status of alarm led - solid/1K/4K
- * @param  dev     kernel device
- * @param  devattr kernel device attribute
- * @param  buf     buffer of set value
- * @param  count   number of bytes in buffer
- * @return         number of bytes written, or error code < 0.
- */
-static ssize_t alarm_led_store(struct device *dev, struct device_attribute *devattr,
-                const char *buf, size_t count)
-{
-    unsigned char led_status,data;
-    if(sysfs_streq(buf, "4k")){
-        led_status = 0x02;
-    }else if(sysfs_streq(buf, "1k")){
-        led_status = 0x01;
-    }else if(sysfs_streq(buf, "solid")){
-        led_status = 0x00;
-    }else{
-        count = -EINVAL;
-        return count;
-    }
-    mutex_lock(&cpld_data->cpld_lock);
-    data = inb(ALM_LED_ADDR);
-    data = data & ~(0x3);
-    data = data | led_status;
-    outb(data, ALM_LED_ADDR);
-    mutex_unlock(&cpld_data->cpld_lock);
-    return count;
-}
-static DEVICE_ATTR_RW(alarm_led);
-
-/**
- * Show alarm led color - off/green/yellow
- * @param  dev     kernel device
- * @param  devattr kernel device attribute
- * @param  buf     buffer for get value
- * @return         Hex string read from scratch register.
- */
-static ssize_t alarm_led_color_show(struct device *dev, struct device_attribute *devattr,
-                char *buf)
-{
-    unsigned char data = 0;
-    mutex_lock(&cpld_data->cpld_lock);
-    data = inb(ALM_LED_ADDR);
-    mutex_unlock(&cpld_data->cpld_lock);
-    data = (data >> 4) & 0x3;
-    return sprintf(buf, "%s\n",
-            data == 0x02 ? "yellow" : data == 0x01 ? "green": "off");
-}
-
-/**
- * Set the color of alarm led - off/green/yellow
- * @param  dev     kernel device
- * @param  devattr kernel device attribute
- * @param  buf     buffer of set value
- * @param  count   number of bytes in buffer
- * @return         number of bytes written, or error code < 0.
- */
-static ssize_t alarm_led_color_store(struct device *dev, struct device_attribute *devattr,
-                const char *buf, size_t count)
-{
-    unsigned char led_status,data;
-    if(sysfs_streq(buf, "yellow")){
-        led_status = 0x02;
-    }else if(sysfs_streq(buf, "green")){
-        led_status = 0x01;
-    }else if(sysfs_streq(buf, "off")){
-        led_status = 0x00;
-    }else{
-        count = -EINVAL;
-        return count;
-    }
-    mutex_lock(&cpld_data->cpld_lock);
-    data = inb(ALM_LED_ADDR);
-    data = data & ~( 0x3 << 4);
-    data = data | (led_status << 4);
-    outb(data, ALM_LED_ADDR);
-    mutex_unlock(&cpld_data->cpld_lock);
-    return count;
-}
-static DEVICE_ATTR_RW(alarm_led_color);
-
 static struct attribute *cpld_b_attrs[] = {
     &dev_attr_version.attr,
     &dev_attr_scratch.attr,
@@ -416,8 +314,6 @@ static struct attribute *cpld_b_attrs[] = {
     &dev_attr_setreg.attr,
     &dev_attr_sys_led.attr,
     &dev_attr_sys_led_color.attr,
-    &dev_attr_alarm_led.attr,
-    &dev_attr_alarm_led_color.attr,
     NULL,
 };
 
@@ -517,5 +413,5 @@ module_exit(cpld_b_exit);
 
 MODULE_AUTHOR("Pradchaya P. <pphuchar@celestica.com>");
 MODULE_DESCRIPTION("Celestica Fishbone48 CPLD baseboard driver");
-MODULE_VERSION("0.0.1");
+MODULE_VERSION("0.0.2");
 MODULE_LICENSE("GPL");

@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.2.0"
+#define MOD_VERSION "0.2.3"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -159,15 +159,15 @@ PORT XCVR       0x00004000 - 0x00004FFF
 
 /* PORT CTRL REGISTER
 [31:7]  RSVD
-[6]     LPMOD   6
-[5]     RSVD
+[6]     RSVD
+[5]     MODSEL  5
 [4]     RST     4
 [3:1]   RSVD
 [0]     TXDIS   0
 */
-#define CTRL_LPMOD   6
-#define CTRL_RST     4
-#define CTRL_TXDIS   0
+#define CTRL_MODSEL   5
+#define CTRL_RST      4
+#define CTRL_TXDIS    0
 
 /* PORT STATUS REGISTER
 [31:6]  RSVD
@@ -230,11 +230,11 @@ PORT XCVR       0x00004000 - 0x00004FFF
 [7:5]   RSVD
 [4]     RST
 [3:1]   RSVD
-[0]     TXDIS/LPMOD
+[0]     TXDIS/MODSEL
 */
 #define I2C_XCVR_CTRL      0x11
 #define I2C_CTRL_RST       4
-#define I2C_CTRL_LPMOD     0
+#define I2C_CTRL_MODSEL    0
 #define I2C_CTRL_TXDIS     0
 
 /* PORT STATUS REGISTER
@@ -283,9 +283,9 @@ PORT XCVR       0x00004000 - 0x00004FFF
 
 
 /* I2C master clock speed */
+// NOTE: Only I2C clock in normal mode is support here.
 enum {
-    I2C_DIV_100K = 0xF9,
-    I2C_DIV_400K = 0x3E,
+    I2C_DIV_100K = 0x80,
 };
 
 /* I2C Master control register */
@@ -626,14 +626,14 @@ static struct attribute_group fpga_attr_grp = {
 };
 
 /* SW CPLDs attributes */
-static ssize_t cpld1_dump_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t cpld1_getreg_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     // CPLD register is one byte
     uint8_t data;
     fpga_i2c_access(fpga_data->i2c_adapter[SW_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, fpga_data->cpld1_read_addr, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
     return sprintf(buf, "0x%2.2x\n", data);
 }
-static ssize_t cpld1_dump_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t cpld1_getreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
     uint8_t addr;
     char *last;
@@ -644,7 +644,7 @@ static ssize_t cpld1_dump_store(struct device *dev, struct device_attribute *att
     fpga_data->cpld1_read_addr = addr;
     return size;
 }
-struct device_attribute dev_attr_cpld1_dump = __ATTR(dump, 0600, cpld1_dump_show, cpld1_dump_store);
+struct device_attribute dev_attr_cpld1_getreg = __ATTR(getreg, 0600, cpld1_getreg_show, cpld1_getreg_store);
 
 static ssize_t cpld1_scratch_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -711,7 +711,7 @@ static ssize_t cpld1_setreg_store(struct device *dev, struct device_attribute *a
 struct device_attribute dev_attr_cpld1_setreg = __ATTR(setreg, 0200, NULL, cpld1_setreg_store);
 
 static struct attribute *cpld1_attrs[] = {
-    &dev_attr_cpld1_dump.attr,
+    &dev_attr_cpld1_getreg.attr,
     &dev_attr_cpld1_scratch.attr,
     &dev_attr_cpld1_setreg.attr,
     NULL,
@@ -721,7 +721,7 @@ static struct attribute_group cpld1_attr_grp = {
     .attrs = cpld1_attrs,
 };
 
-static ssize_t cpld2_dump_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t cpld2_getreg_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     // CPLD register is one byte
     uint8_t data;
@@ -729,7 +729,7 @@ static ssize_t cpld2_dump_show(struct device *dev, struct device_attribute *attr
     return sprintf(buf, "0x%2.2x\n", data);
 }
 
-static ssize_t cpld2_dump_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t cpld2_getreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
     // CPLD register is one byte
     uint32_t addr;
@@ -741,7 +741,7 @@ static ssize_t cpld2_dump_store(struct device *dev, struct device_attribute *att
     fpga_data->cpld2_read_addr = addr;
     return size;
 }
-struct device_attribute dev_attr_cpld2_dump = __ATTR(dump, 0600, cpld2_dump_show, cpld2_dump_store);
+struct device_attribute dev_attr_cpld2_getreg = __ATTR(getreg, 0600, cpld2_getreg_show, cpld2_getreg_store);
 
 static ssize_t cpld2_scratch_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -809,7 +809,7 @@ static ssize_t cpld2_setreg_store(struct device *dev, struct device_attribute *a
 struct device_attribute dev_attr_cpld2_setreg = __ATTR(setreg, 0200, NULL, cpld2_setreg_store);
 
 static struct attribute *cpld2_attrs[] = {
-    &dev_attr_cpld2_dump.attr,
+    &dev_attr_cpld2_getreg.attr,
     &dev_attr_cpld2_scratch.attr,
     &dev_attr_cpld2_setreg.attr,
     NULL,
@@ -890,7 +890,7 @@ static ssize_t sfp_modabs_show(struct device *dev, struct device_attribute *attr
 }
 DEVICE_ATTR_RO(sfp_modabs);
 
-static ssize_t qsfp_lpmode_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t qsfp_modsel_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     u8 data;
     int err;
@@ -900,9 +900,9 @@ static ssize_t qsfp_lpmode_show(struct device *dev, struct device_attribute *att
     if(err < 0){
         return err;
     }
-    return sprintf(buf, "%d\n", (data >> I2C_CTRL_LPMOD) & 1U);
+    return sprintf(buf, "%d\n", (data >> I2C_CTRL_MODSEL) & 1U);
 }
-static ssize_t qsfp_lpmode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t qsfp_modsel_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
     ssize_t status;
     long value;
@@ -912,18 +912,18 @@ static ssize_t qsfp_lpmode_store(struct device *dev, struct device_attribute *at
 
     status = kstrtol(buf, 0, &value);
     if (status == 0) {
-        // if value is 0, disable the lpmode
+        // if value is 0, clear bit.
         i2c_xcvr_access(I2C_XCVR_CTRL,portid,&data,I2C_SMBUS_READ);
         if (!value)
-            data = data & ~((u8)0x1 << I2C_CTRL_LPMOD);
+            data = data & ~( 1U << I2C_CTRL_MODSEL );
         else
-            data = data | ((u8)0x1 << I2C_CTRL_LPMOD);
+            data = data | ( 1U << I2C_CTRL_MODSEL );
         i2c_xcvr_access(I2C_XCVR_CTRL,portid,&data,I2C_SMBUS_WRITE);
         status = size;
     }
     return status;
 }
-DEVICE_ATTR_RW(qsfp_lpmode);
+DEVICE_ATTR_RW(qsfp_modsel);
 
 static ssize_t qsfp_reset_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1001,7 +1001,7 @@ DEVICE_ATTR_RW(sfp_txdisable);
 static struct attribute *sff_attrs[] = {
     &dev_attr_qsfp_modirq.attr,
     &dev_attr_qsfp_modprs.attr,
-    &dev_attr_qsfp_lpmode.attr,
+    &dev_attr_qsfp_modsel.attr,
     &dev_attr_qsfp_reset.attr,
     &dev_attr_sfp_txfault.attr,
     &dev_attr_sfp_rxlos.attr,
@@ -1057,7 +1057,7 @@ DEVICE_ATTR_RW(port_led_mode);
 // Only work when port_led_mode set to 1
 static ssize_t port_led_color_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    // value can be R/G/B/C/M/Y/W/OFF
+    // value can be green/amber/both/alt-blink/OFF
     __u8 led_color1, led_color2;
     int err;
     err = fpga_i2c_access(fpga_data->i2c_adapter[SW_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, 0x09, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&led_color1);
@@ -1067,10 +1067,10 @@ static ssize_t port_led_color_show(struct device *dev, struct device_attribute *
     if (err < 0)
         return err;
     return sprintf(buf, "%s %s\n",
-                   led_color1 == 0x07 ? "off" : led_color1 == 0x06 ? "green" : led_color1 == 0x05 ?  "red" : led_color1 == 0x04 ? 
-                    "yellow" : led_color1 == 0x03 ? "blue" : led_color1 == 0x02 ?  "cyan" : led_color1 == 0x01 ?  "magenta" : "white",
-                   led_color1 == 0x07 ? "off" : led_color1 == 0x06 ? "green" : led_color1 == 0x05 ?  "red" : led_color1 == 0x04 ? 
-                    "yellow" : led_color1 == 0x03 ? "blue" : led_color1 == 0x02 ?  "cyan" : led_color1 == 0x01 ?  "magenta" : "white");
+                   led_color1 == 0x07 ? "off" : led_color1 == 0x06 ? "green" : led_color1 == 0x05 ?  "amber" : led_color1 == 0x04 ? 
+                    "both" : "alt-blink",
+                   led_color1 == 0x07 ? "off" : led_color1 == 0x06 ? "green" : led_color1 == 0x05 ?  "amber" : led_color1 == 0x04 ? 
+                    "both" : "alt-blink");
 }
 
 static ssize_t port_led_color_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
@@ -1081,18 +1081,12 @@ static ssize_t port_led_color_store(struct device *dev, struct device_attribute 
         led_color = 0x07;
     } else if (sysfs_streq(buf, "green")) {
         led_color = 0x06;
-    } else if (sysfs_streq(buf, "red")) {
+    } else if (sysfs_streq(buf, "amber")) {
         led_color = 0x05;
-    } else if (sysfs_streq(buf, "yellow")) {
+    } else if (sysfs_streq(buf, "both")) {
         led_color = 0x04;
-    } else if (sysfs_streq(buf, "blue")) {
+    } else if (sysfs_streq(buf, "alt-blink")) {
         led_color = 0x03;
-    } else if (sysfs_streq(buf, "cyan")) {
-        led_color = 0x02;
-    } else if (sysfs_streq(buf, "magenta")) {
-        led_color = 0x01;
-    } else if (sysfs_streq(buf, "white")) {
-        led_color = 0x00;
     } else {
         status = -EINVAL;
         return status;
@@ -1149,7 +1143,7 @@ static int i2c_core_init(unsigned int master_bus, unsigned int freq_div,void __i
     REG_CTRL   = I2C_MASTER_CTRL    + (master_bus - 1) * 0x20;
     REG_CMD    = I2C_MASTER_CMD     + (master_bus - 1) * 0x20;
 
-    if ( freq_div != I2C_DIV_100K && freq_div != I2C_DIV_400K ) {
+    if ( freq_div != I2C_DIV_100K ) {
         printk(KERN_ERR "FPGA I2C core: Unsupported clock divider: %x\n", freq_div);
         return -EINVAL;
     }
@@ -1365,7 +1359,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
     //// Wait {A}
     // + IACK
-    error = i2c_wait_ack(adapter, 12, 1);
+    error = i2c_wait_ack(adapter, 30, 1);
     if (error < 0) {
         info( "get error %d", error);
         goto Done;
@@ -1386,7 +1380,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
-        error = i2c_wait_ack(adapter, 12, 1);
+        error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
             goto Done;
@@ -1417,7 +1411,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
-        error = i2c_wait_ack(adapter, 12, 1);
+        error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
             goto Done;
@@ -1446,7 +1440,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
             // Wait {A}
             // IACK
-            error = i2c_wait_ack(adapter, 12, 1);
+            error = i2c_wait_ack(adapter, 30, 1);
             if (error < 0) {
                 goto Done;
             }
@@ -1468,7 +1462,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR , pci_bar + REG_CMD);
 
         // Wait {A}
-        error = i2c_wait_ack(adapter, 12, 1);
+        error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             goto Done;
         }
@@ -1512,7 +1506,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             }
             
             // Wait {A}
-            error = i2c_wait_ack(adapter, 12, 0);
+            error = i2c_wait_ack(adapter, 30, 0);
             if (error < 0) {
                 goto Done;
             }
@@ -1535,7 +1529,7 @@ Done:
     // SET STOP
     iowrite8( 1 << I2C_CMD_STO, pci_bar + REG_CMD);
     // Polling for the STO to finish.
-    i2c_wait_ack(adapter, 12, 0);
+    i2c_wait_ack(adapter, 30, 0);
     check(pci_bar + REG_CTRL);
     check(pci_bar + REG_STAT);
 #ifdef DEBUG_KERN
@@ -1844,7 +1838,7 @@ static int fishbone48_drv_probe(struct platform_device *pdev)
     }
 
     for (portid_count = I2C_MASTER_CH_1; portid_count <= I2C_MASTER_CH_TOTAL; portid_count++){
-        ret = i2c_core_init(portid_count, I2C_DIV_400K, fpga_dev.data_base_addr);
+        ret = i2c_core_init(portid_count, I2C_DIV_100K, fpga_dev.data_base_addr);
         if (ret < 0) {
             dev_err(&pdev->dev, "Unable to init I2C core %d\n", portid_count);
             sysfs_remove_group(&sff_dev->kobj, &sff_led_test_grp);
