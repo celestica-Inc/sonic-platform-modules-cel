@@ -7,5 +7,5 @@ update-rc.d platform-modules-fishbone32 defaults
 service platform-modules-fishbone32 start
 
 # Enable platform-sync_bmc-timer
-#systemctl enable sync_bmc.timer
-#systemctl start sync_bmc.timer
+systemctl enable sync_bmc.timer
+systemctl start sync_bmc.timer
