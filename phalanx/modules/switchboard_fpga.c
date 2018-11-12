@@ -16,17 +16,14 @@
  *            \--platform
  *                \--AS23128h.switchboard
  *                    |--FPGA
- *                    |--CPLD1
- *                    |--CPLD2
- *                    |--CPLD3
- *                    |--CPLD4
+ *                    |--CPLD[1..4]
  *                    \--SFF
  *                        \--QSFP[1..128]
  *
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.0.3"
+#define MOD_VERSION "0.0.4"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -504,6 +501,8 @@ struct phalanx_fpga_data {
     void __iomem * fpga_read_addr;
     uint8_t cpld1_read_addr;
     uint8_t cpld2_read_addr;
+    uint8_t cpld3_read_addr;
+    uint8_t cpld4_read_addr;
 };
 
 struct sff_device_data {
@@ -521,6 +520,8 @@ struct phalanx_fpga_data *fpga_data;
 static struct kobject *fpga = NULL;
 static struct kobject *cpld1 = NULL;
 static struct kobject *cpld2 = NULL;
+static struct kobject *cpld3 = NULL;
+static struct kobject *cpld4 = NULL;
 
 /**
  * Device node in sysfs tree.
@@ -857,6 +858,202 @@ static struct attribute *cpld2_attrs[] = {
 
 static struct attribute_group cpld2_attr_grp = {
     .attrs = cpld2_attrs,
+};
+
+static ssize_t cpld3_getreg_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    // CPLD register is one byte
+    uint8_t data;
+    fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, fpga_data->cpld3_read_addr, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    return sprintf(buf, "0x%2.2x\n", data);
+}
+
+static ssize_t cpld3_getreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    // CPLD register is one byte
+    uint32_t addr;
+    char *last;
+    addr = (uint8_t)strtoul(buf, &last, 16);
+    if (addr == 0 && buf == last) {
+        return -EINVAL;
+    }
+    fpga_data->cpld3_read_addr = addr;
+    return size;
+}
+struct device_attribute dev_attr_cpld3_getreg = __ATTR(getreg, 0600, cpld3_getreg_show, cpld3_getreg_store);
+
+static ssize_t cpld3_scratch_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    // CPLD register is one byte
+    __u8 data;
+    int err;
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, 0x01, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    if (err < 0)
+        return err;
+    return sprintf(buf, "0x%2.2x\n", data);
+}
+
+static ssize_t cpld3_scratch_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    // CPLD register is one byte
+    __u8 data;
+    char *last;
+    int err;
+
+    data = (uint8_t)strtoul(buf, &last, 16);
+    if (data == 0 && buf == last) {
+        return -EINVAL;
+    }
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_WRITE, 0x01, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    if (err < 0)
+        return err;
+    return size;
+}
+struct device_attribute dev_attr_cpld3_scratch = __ATTR(scratch, 0600, cpld3_scratch_show, cpld3_scratch_store);
+
+static ssize_t cpld3_setreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    uint8_t addr, value;
+    char *tok;
+    char clone[size];
+    char *pclone = clone;
+    int err;
+    char *last;
+
+    strcpy(clone, buf);
+
+    tok = strsep((char**)&pclone, " ");
+    if (tok == NULL) {
+        return -EINVAL;
+    }
+    addr = (uint8_t)strtoul(tok, &last, 16);
+    if (addr == 0 && tok == last) {
+        return -EINVAL;
+    }
+    tok = strsep((char**)&pclone, " ");
+    if (tok == NULL) {
+        return -EINVAL;
+    }
+    value = (uint8_t)strtoul(tok, &last, 16);
+    if (value == 0 && tok == last) {
+        return -EINVAL;
+    }
+
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00, I2C_SMBUS_WRITE, addr, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&value);
+    if (err < 0)
+        return err;
+
+    return size;
+}
+struct device_attribute dev_attr_cpld3_setreg = __ATTR(setreg, 0200, NULL, cpld3_setreg_store);
+
+static struct attribute *cpld3_attrs[] = {
+    &dev_attr_cpld3_getreg.attr,
+    &dev_attr_cpld3_scratch.attr,
+    &dev_attr_cpld3_setreg.attr,
+    NULL,
+};
+
+static struct attribute_group cpld3_attr_grp = {
+    .attrs = cpld3_attrs,
+};
+
+static ssize_t cpld4_getreg_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    // CPLD register is one byte
+    uint8_t data;
+    fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD2_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, fpga_data->cpld4_read_addr, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    return sprintf(buf, "0x%2.2x\n", data);
+}
+
+static ssize_t cpld4_getreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    // CPLD register is one byte
+    uint32_t addr;
+    char *last;
+    addr = (uint8_t)strtoul(buf, &last, 16);
+    if (addr == 0 && buf == last) {
+        return -EINVAL;
+    }
+    fpga_data->cpld4_read_addr = addr;
+    return size;
+}
+struct device_attribute dev_attr_cpld4_getreg = __ATTR(getreg, 0600, cpld4_getreg_show, cpld4_getreg_store);
+
+static ssize_t cpld4_scratch_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    // CPLD register is one byte
+    __u8 data;
+    int err;
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD2_SLAVE_ADDR, 0x00, I2C_SMBUS_READ, 0x01, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    if (err < 0)
+        return err;
+    return sprintf(buf, "0x%2.2x\n", data);
+}
+
+static ssize_t cpld4_scratch_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    // CPLD register is one byte
+    __u8 data;
+    char *last;
+    int err;
+
+    data = (uint8_t)strtoul(buf, &last, 16);
+    if (data == 0 && buf == last) {
+        return -EINVAL;
+    }
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD2_SLAVE_ADDR, 0x00, I2C_SMBUS_WRITE, 0x01, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&data);
+    if (err < 0)
+        return err;
+    return size;
+}
+struct device_attribute dev_attr_cpld4_scratch = __ATTR(scratch, 0600, cpld4_scratch_show, cpld4_scratch_store);
+
+static ssize_t cpld4_setreg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+    uint8_t addr, value;
+    char *tok;
+    char clone[size];
+    char *pclone = clone;
+    int err;
+    char *last;
+
+    strcpy(clone, buf);
+
+    tok = strsep((char**)&pclone, " ");
+    if (tok == NULL) {
+        return -EINVAL;
+    }
+    addr = (uint8_t)strtoul(tok, &last, 16);
+    if (addr == 0 && tok == last) {
+        return -EINVAL;
+    }
+    tok = strsep((char**)&pclone, " ");
+    if (tok == NULL) {
+        return -EINVAL;
+    }
+    value = (uint8_t)strtoul(tok, &last, 16);
+    if (value == 0 && tok == last) {
+        return -EINVAL;
+    }
+
+    err = fpga_i2c_access(fpga_data->i2c_adapter[SW2_I2C_CPLD_INDEX], CPLD2_SLAVE_ADDR, 0x00, I2C_SMBUS_WRITE, addr, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&value);
+    if (err < 0)
+        return err;
+
+    return size;
+}
+struct device_attribute dev_attr_cpld4_setreg = __ATTR(setreg, 0200, NULL, cpld4_setreg_store);
+
+static struct attribute *cpld4_attrs[] = {
+    &dev_attr_cpld4_getreg.attr,
+    &dev_attr_cpld4_scratch.attr,
+    &dev_attr_cpld4_setreg.attr,
+    NULL,
+};
+
+static struct attribute_group cpld4_attr_grp = {
+    .attrs = cpld4_attrs,
 };
 
 /* QSFP/SFP+ attributes */
@@ -1900,9 +2097,67 @@ static int phalanx_drv_probe(struct platform_device *pdev)
         return ret;
     }
 
+    cpld3 = kobject_create_and_add("CPLD3", &pdev->dev.kobj);
+    if (!cpld3) {
+        sysfs_remove_group(cpld2, &cpld2_attr_grp);
+        kobject_put(cpld2);
+        sysfs_remove_group(cpld1, &cpld1_attr_grp);
+        kobject_put(cpld1);
+        sysfs_remove_group(fpga, &fpga_attr_grp);
+        kobject_put(fpga);
+        kzfree(fpga_data);
+        return -ENOMEM;
+    }
+    ret = sysfs_create_group(cpld3, &cpld3_attr_grp);
+    if (ret != 0) {
+        printk(KERN_ERR "Cannot create CPLD3 sysfs attributes\n");
+        kobject_put(cpld3);
+        sysfs_remove_group(cpld2, &cpld2_attr_grp);
+        kobject_put(cpld2);
+        sysfs_remove_group(cpld1, &cpld1_attr_grp);
+        kobject_put(cpld1);
+        sysfs_remove_group(fpga, &fpga_attr_grp);
+        kobject_put(fpga);
+        kzfree(fpga_data);
+        return ret;
+    }
+
+    cpld4 = kobject_create_and_add("CPLD4", &pdev->dev.kobj);
+    if (!cpld4) {
+        sysfs_remove_group(cpld3, &cpld3_attr_grp);
+        kobject_put(cpld3);
+        sysfs_remove_group(cpld2, &cpld2_attr_grp);
+        kobject_put(cpld2);
+        sysfs_remove_group(cpld1, &cpld1_attr_grp);
+        kobject_put(cpld1);
+        sysfs_remove_group(fpga, &fpga_attr_grp);
+        kobject_put(fpga);
+        kzfree(fpga_data);
+        return -ENOMEM;
+    }
+    ret = sysfs_create_group(cpld4, &cpld4_attr_grp);
+    if (ret != 0) {
+        printk(KERN_ERR "Cannot create CPLD4 sysfs attributes\n");
+        kobject_put(cpld4);
+        sysfs_remove_group(cpld3, &cpld3_attr_grp);
+        kobject_put(cpld3);
+        sysfs_remove_group(cpld2, &cpld2_attr_grp);
+        kobject_put(cpld2);
+        sysfs_remove_group(cpld1, &cpld1_attr_grp);
+        kobject_put(cpld1);
+        sysfs_remove_group(fpga, &fpga_attr_grp);
+        kobject_put(fpga);
+        kzfree(fpga_data);
+        return ret;
+    }
+
     sff_dev = device_create(fpgafwclass, NULL, MKDEV(0, 0), NULL, "sff_device");
     if (IS_ERR(sff_dev)) {
         printk(KERN_ERR "Failed to create sff device\n");
+        sysfs_remove_group(cpld4, &cpld4_attr_grp);
+        kobject_put(cpld4);
+        sysfs_remove_group(cpld3, &cpld3_attr_grp);
+        kobject_put(cpld3);
         sysfs_remove_group(cpld2, &cpld2_attr_grp);
         kobject_put(cpld2);
         sysfs_remove_group(cpld1, &cpld1_attr_grp);
@@ -1917,6 +2172,10 @@ static int phalanx_drv_probe(struct platform_device *pdev)
     if (ret != 0) {
         printk(KERN_ERR "Cannot create SFF attributes\n");
         device_destroy(fpgafwclass, MKDEV(0, 0));
+        sysfs_remove_group(cpld4, &cpld4_attr_grp);
+        kobject_put(cpld4);
+        sysfs_remove_group(cpld3, &cpld3_attr_grp);
+        kobject_put(cpld3);
         sysfs_remove_group(cpld2, &cpld2_attr_grp);
         kobject_put(cpld2);
         sysfs_remove_group(cpld1, &cpld1_attr_grp);
@@ -1931,6 +2190,10 @@ static int phalanx_drv_probe(struct platform_device *pdev)
     if (ret != 0) {
         sysfs_remove_group(&sff_dev->kobj, &sff_led_test_grp);
         device_destroy(fpgafwclass, MKDEV(0, 0));
+        sysfs_remove_group(cpld4, &cpld4_attr_grp);
+        kobject_put(cpld4);
+        sysfs_remove_group(cpld3, &cpld3_attr_grp);
+        kobject_put(cpld3);
         sysfs_remove_group(cpld2, &cpld2_attr_grp);
         kobject_put(cpld2);
         sysfs_remove_group(cpld1, &cpld1_attr_grp);
@@ -1947,6 +2210,10 @@ static int phalanx_drv_probe(struct platform_device *pdev)
             dev_err(&pdev->dev, "Unable to init I2C core %d\n", portid_count);
             sysfs_remove_group(&sff_dev->kobj, &sff_led_test_grp);
             device_destroy(fpgafwclass, MKDEV(0, 0));
+            sysfs_remove_group(cpld4, &cpld4_attr_grp);
+            kobject_put(cpld4);
+            sysfs_remove_group(cpld3, &cpld3_attr_grp);
+            kobject_put(cpld3);
             sysfs_remove_group(cpld2, &cpld2_attr_grp);
             kobject_put(cpld2);
             sysfs_remove_group(cpld1, &cpld1_attr_grp);
@@ -2065,10 +2332,14 @@ static int phalanx_drv_remove(struct platform_device *pdev)
     sysfs_remove_group(fpga, &fpga_attr_grp);
     sysfs_remove_group(cpld1, &cpld1_attr_grp);
     sysfs_remove_group(cpld2, &cpld2_attr_grp);
+    sysfs_remove_group(cpld3, &cpld3_attr_grp);
+    sysfs_remove_group(cpld4, &cpld4_attr_grp);
     sysfs_remove_group(&sff_dev->kobj, &sff_led_test_grp);
     kobject_put(fpga);
     kobject_put(cpld1);
     kobject_put(cpld2);
+    kobject_put(cpld3);
+    kobject_put(cpld4);
     device_destroy(fpgafwclass, MKDEV(0, 0));
     devm_kfree(&pdev->dev, fpga_data);
     return 0;
