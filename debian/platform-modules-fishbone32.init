@@ -16,6 +16,8 @@ start)
         echo -n "Setting up board... "
 
         # Add driver to support HW
+        modprobe dimm-bus
+        modprobe i2c-imc
         modprobe i2c-dev
         modprobe baseboard_cpld
         modprobe switchboard_fpga
