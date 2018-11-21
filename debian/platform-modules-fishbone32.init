@@ -17,7 +17,7 @@ start)
 
         # Add driver to support HW
         modprobe dimm-bus
-        modprobe i2c-imc
+        modprobe i2c-imc allow_unsafe_access=1
         modprobe i2c-dev
         modprobe baseboard_cpld
         modprobe switchboard_fpga
