@@ -461,7 +461,7 @@ static int imc_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 	pci_set_drvdata(dev, priv);
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 1; i++) {
 		err = imc_init_channel(priv, i, 0);
 		if (err)
 			goto exit_free_channels;
@@ -482,7 +482,7 @@ static void imc_remove(struct pci_dev *dev)
 	int i;
 	struct imc_priv *priv = pci_get_drvdata(dev);
 
-	for (i = 0; i < 2; i++)
+	for (i = 0; i < 1; i++)
 		imc_free_channel(priv, i);
 }
 
@@ -492,7 +492,7 @@ static int imc_suspend(struct pci_dev *dev, pm_message_t mesg)
 	struct imc_priv *priv = pci_get_drvdata(dev);
 
 	/* BIOS is in charge.  We should finish any pending transaction */
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 1; i++) {
 		mutex_lock(&priv->channels[i].mutex);
 		priv->channels[i].suspended = true;
 		mutex_unlock(&priv->channels[i].mutex);
@@ -506,7 +506,7 @@ static int imc_resume(struct pci_dev *dev)
 	int i;
 	struct imc_priv *priv = pci_get_drvdata(dev);
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 1; i++) {
 		mutex_lock(&priv->channels[i].mutex);
 		priv->channels[i].suspended = false;
 		mutex_unlock(&priv->channels[i].mutex);
