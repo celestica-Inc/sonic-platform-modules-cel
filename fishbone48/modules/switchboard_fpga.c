@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.2.3"
+#define MOD_VERSION "0.3.0"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -60,7 +60,7 @@ static int  majorNumber;
 #define FPGA_PCI_NAME "fishbone48_fpga_pci"
 #define DEVICE_NAME "fwupgrade"
 
-
+static bool allow_unsafe_i2c_access;
 
 static int smbus_access(struct i2c_adapter *adapter, u16 addr,
                         unsigned short flags, char rw, u8 cmd,
@@ -1714,7 +1714,7 @@ static int fishbone48_drv_probe(struct platform_device *pdev)
     struct resource *res;
     int ret = 0;
     int portid_count;
-    uint8_t fan_cpld_version, bb_cpld_version, cpld1_version, cpld2_version;
+    uint8_t cpld1_version, cpld2_version;
     uint16_t prev_i2c_switch = 0;
     struct sff_device_data *sff_data;
 
@@ -1838,6 +1838,11 @@ static int fishbone48_drv_probe(struct platform_device *pdev)
     }
 
     for (portid_count = I2C_MASTER_CH_1; portid_count <= I2C_MASTER_CH_TOTAL; portid_count++){
+        if(!allow_unsafe_i2c_access){
+            if( portid_count < I2C_MASTER_CH_7 ||  
+                portid_count == I2C_MASTER_CH_9 || portid_count == I2C_MASTER_CH_10 )
+                continue;
+        }
         ret = i2c_core_init(portid_count, I2C_DIV_100K, fpga_dev.data_base_addr);
         if (ret < 0) {
             dev_err(&pdev->dev, "Unable to init I2C core %d\n", portid_count);
@@ -1855,6 +1860,12 @@ static int fishbone48_drv_probe(struct platform_device *pdev)
     }
 
     for (portid_count = 0 ; portid_count < VIRTUAL_I2C_PORT_LENGTH ; portid_count++) {
+        if(!allow_unsafe_i2c_access){
+            if( portid_count < SW1_I2C_CPLD_INDEX ){
+                fpga_data->i2c_adapter[portid_count] = NULL;
+                continue;
+            }
+        }
         fpga_data->i2c_adapter[portid_count] = fishbone48_i2c_init(pdev, portid_count, VIRTUAL_I2C_BUS_OFFSET);
     }
 
@@ -1882,23 +1893,23 @@ static int fishbone48_drv_probe(struct platform_device *pdev)
 #ifdef TEST_MODE
     return 0;
 #endif
-    fpga_i2c_access(fpga_data->i2c_adapter[FAN_I2C_CPLD_INDEX], FAN_CPLD_SLAVE_ADDR, 0x00,
-                    I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&fan_cpld_version);
-    fpga_i2c_access(fpga_data->i2c_adapter[BB_I2C_CPLD_INDEX], BB_CPLD_SLAVE_ADDR, 0x00,
-                    I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&bb_cpld_version);
     fpga_i2c_access(fpga_data->i2c_adapter[SW_I2C_CPLD_INDEX], CPLD1_SLAVE_ADDR, 0x00,
                     I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&cpld1_version);
     fpga_i2c_access(fpga_data->i2c_adapter[SW_I2C_CPLD_INDEX], CPLD2_SLAVE_ADDR, 0x00,
                     I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA, (union i2c_smbus_data*)&cpld2_version);
 
-    printk(KERN_INFO "Fan CPLD Version: %2.2x\n", cpld1_version);
-    printk(KERN_INFO "BaseBoard CPLD Version: %2.2x\n", cpld2_version);
     printk(KERN_INFO "Switch CPLD1 Version: %2.2x\n", cpld1_version);
     printk(KERN_INFO "Switch CPLD2 Version: %2.2x\n", cpld2_version);
 
 
     /* Init I2C buses that has PCA9548 switch device. */
     for (portid_count = 0; portid_count < VIRTUAL_I2C_PORT_LENGTH; portid_count++) {
+
+        if(!allow_unsafe_i2c_access){
+            if( portid_count < SW1_I2C_CPLD_INDEX ){
+                continue;
+            }
+        }
 
         struct i2c_dev_data *dev_data;
         unsigned char master_bus;
@@ -1940,6 +1951,11 @@ static int fishbone48_drv_remove(struct platform_device *pdev)
     }
 
     for (portid_count = I2C_MASTER_CH_1; portid_count <= I2C_MASTER_CH_TOTAL; portid_count++){
+        if(!allow_unsafe_i2c_access){
+            if( portid_count < I2C_MASTER_CH_7 ||  
+                portid_count == I2C_MASTER_CH_9 || portid_count == I2C_MASTER_CH_10 )
+                continue;
+        }
         i2c_core_deinit(portid_count, fpga_dev.data_base_addr);
     }
 
@@ -2198,6 +2214,9 @@ void fishbone48_exit(void)
 
 module_init(fishbone48_init);
 module_exit(fishbone48_exit);
+
+module_param(allow_unsafe_i2c_access, bool, 0400);
+MODULE_PARM_DESC(allow_unsafe_i2c_access, "enable i2c busses despite potential races against BMC bus access");
 
 MODULE_AUTHOR("Pradchaya P. <pphuchar@celestica.com>");
 MODULE_DESCRIPTION("Celestica Fishbone48 switchboard platform driver");
