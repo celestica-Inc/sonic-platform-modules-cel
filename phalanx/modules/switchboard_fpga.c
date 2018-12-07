@@ -2383,7 +2383,7 @@ static int phalanx_drv_probe(struct platform_device *pdev)
 
     for (portid_count = 0 ; portid_count < VIRTUAL_I2C_PORT_LENGTH ; portid_count++) {
         if(!allow_unsafe_i2c_access){
-            if( portid_count < SW1_I2C_CPLD_INDEX ){
+            if( portid_count >= FAN_I2C_CPLD_INDEX && portid_count < SW1_I2C_CPLD_INDEX ){
                 fpga_data->i2c_adapter[portid_count] = NULL;
                 continue;
             }
@@ -2434,7 +2434,7 @@ static int phalanx_drv_probe(struct platform_device *pdev)
     for (portid_count = 0; portid_count < VIRTUAL_I2C_PORT_LENGTH; portid_count++) {
 
         if(!allow_unsafe_i2c_access){
-            if( portid_count < SW1_I2C_CPLD_INDEX ){
+            if( portid_count >= FAN_I2C_CPLD_INDEX && portid_count < SW1_I2C_CPLD_INDEX ){
                 continue;
             }
         }
