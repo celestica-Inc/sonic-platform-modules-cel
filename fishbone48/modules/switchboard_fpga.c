@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.0"
+#define MOD_VERSION "0.3.1"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -432,7 +432,7 @@ static struct i2c_switch fpga_i2c_bus_dev[] = {
     {I2C_MASTER_CH_6, 0xFF, 0, NONE, "I2C_6"},
     {I2C_MASTER_CH_7, 0xFF, 0, NONE, "I2C_7"}, // SW
 
-    // FIXME: Two buses below are for front panel port debug     
+    // NOTE: Two buses below are for front panel port debug     
     {I2C_MASTER_CH_11, 0xFF, 0, NONE, "I2C_11"}, // SFF
     {I2C_MASTER_CH_12, 0xFF, 0, NONE, "I2C_12"},
 
@@ -1213,7 +1213,7 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
     unsigned int master_bus = new_data->pca9548.master_bus;
 
     if (master_bus < I2C_MASTER_CH_1 || master_bus > I2C_MASTER_CH_TOTAL) {
-        error = -ENXIO;
+        error = -EINVAL;
         return error;
     }
 
@@ -1263,7 +1263,7 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         info( "SL No ACK");
         if (writing) {
             info("Error No ACK");
-            return -ENXIO;
+            return -EIO;
         }
     } else {
         info( "SL ACK");
@@ -1333,7 +1333,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     master_bus = dev_data->pca9548.master_bus;
 
     if (master_bus < I2C_MASTER_CH_1 || master_bus > I2C_MASTER_CH_TOTAL) {
-        error = -ENXIO;
+        error = -EINVAL;
         goto Done;
     }
 
@@ -1557,6 +1557,8 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     unsigned char switch_addr;
     unsigned char channel;
     uint16_t prev_port = 0;
+    unsigned char prev_switch;
+    unsigned char prev_ch;
 
     dev_data = i2c_get_adapdata(adapter);
     master_bus = dev_data->pca9548.master_bus;
@@ -1566,35 +1568,51 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     // Acquire the master resource.
     mutex_lock(&fpga_i2c_master_locks[master_bus - 1]);
     prev_port = fpga_i2c_lasted_access_port[master_bus - 1];
+    prev_switch = (unsigned char)(prev_port >> 8) & 0xFF;
+    prev_ch = (unsigned char)(prev_port & 0xFF);
 
     if (switch_addr != 0xFF) {
+
         // Check lasted access switch address on a master
-        if ((unsigned char)(prev_port >> 8) == switch_addr) {
-            // check if channel is the same
-            if ((unsigned char)(prev_port & 0x00FF) != channel) {
+        if ( prev_switch != switch_addr && prev_switch != 0 ) {
+            // reset prev_port PCA9548 chip
+            error = smbus_access(adapter, (u16)(prev_switch), flags, I2C_SMBUS_WRITE, 0x00, I2C_SMBUS_BYTE, NULL);
+            if(error < 0){
+                dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                goto release_unlock;
+            }
+            // set PCA9548 to current channel
+            error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
+            if(error < 0){
+                dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                goto release_unlock;
+            }
+            // update lasted port
+            fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
+
+        } else {
+            // check if channel is also changes
+            if ( prev_ch != channel || prev_switch == 0 ) {
                 // set new PCA9548 at switch_addr to current
                 error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
+                if(error < 0){
+                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                    goto release_unlock;
+                }
                 // update lasted port
                 fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
             }
-        } else {
-            // reset prev_port PCA9548 chip
-            error = smbus_access(adapter, (u16)(prev_port >> 8), flags, I2C_SMBUS_WRITE, 0x00, I2C_SMBUS_BYTE, NULL);
-            // set PCA9548 to current channel
-            error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
-            // update lasted port
-            fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
         }
     }
 
     // Do SMBus communication
     error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
-    // reset the channel
+
+release_unlock:    
     mutex_unlock(&fpga_i2c_master_locks[master_bus - 1]);
+    dev_dbg(&adapter->dev,"switch ch %d of 0x%x -> ch %d of 0x%x\n", prev_ch, prev_switch, channel, switch_addr);
     return error;
 }
-
-
 
 /**
  * A callback function show available smbus functions.
