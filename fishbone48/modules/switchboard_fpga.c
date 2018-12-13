@@ -1242,9 +1242,8 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         }
     }
     info("Status %2.2X", Status);
-    // Read status and flag, clear the IRQ
-    iowrite8(1 << I2C_CMD_IACK, pci_bar + REG_CMD);
-    Status = ioread8(pci_bar + REG_STAT);
+    // Read status and flag
+    // Status = ioread8(pci_bar + REG_STAT);
     info("STA:%x",Status);
 
     if (error < 0) {
@@ -1353,7 +1352,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         // sent device address with Write mode
         iowrite8(addr << 1 | 0x00, pci_bar + REG_DATA);
     }
-    iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR , pci_bar + REG_CMD);
+    iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
     info( "MS Start");
 
@@ -1375,7 +1374,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         // sent command code to data register
         iowrite8(cmd, pci_bar + REG_DATA);
         // Start the transfer
-        iowrite8(1 << I2C_CMD_WR, pci_bar + REG_CMD);
+        iowrite8(1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
         info( "MS Send CMD 0x%2.2X", cmd);
 
         // Wait {A}
@@ -1406,7 +1405,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         iowrite8(cnt, pci_bar + REG_DATA);
         //Start the transfer
-        iowrite8(1 << I2C_CMD_WR, pci_bar + REG_CMD);
+        iowrite8(1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
         info( "MS Send CNT 0x%2.2X", cnt);
 
         // Wait {A}
@@ -1436,7 +1435,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             info("STA:%x", ioread8(pci_bar + REG_STAT) );
             info( "   Data > %2.2X", data->block[bid]);
             iowrite8(data->block[bid], pci_bar + REG_DATA);
-            iowrite8(1 << I2C_CMD_WR, pci_bar + REG_CMD);
+            iowrite8(1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
             // Wait {A}
             // IACK
@@ -1459,7 +1458,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         // sent Address with Read mode
         iowrite8( addr << 1 | 0x1 , pci_bar + REG_DATA);
         // SET START | WRITE
-        iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR , pci_bar + REG_CMD);
+        iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
         // Wait {A}
         error = i2c_wait_ack(adapter, 30, 1);
@@ -1499,10 +1498,10 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             // Start receive FSM
             if (bid == cnt - 1) {
                 info( "READ NACK");
-                iowrite8(1 << I2C_CMD_RD | 1 << I2C_CMD_ACK, pci_bar + REG_CMD);
+                iowrite8(1 << I2C_CMD_RD | 1 << I2C_CMD_ACK | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
             }else{
 
-                iowrite8(1 << I2C_CMD_RD , pci_bar + REG_CMD);
+                iowrite8(1 << I2C_CMD_RD | 1 << I2C_CMD_IACK , pci_bar + REG_CMD);
             }
             
             // Wait {A}
@@ -1527,7 +1526,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 Done:
     info( "MS STOP");
     // SET STOP
-    iowrite8( 1 << I2C_CMD_STO, pci_bar + REG_CMD);
+    iowrite8( 1 << I2C_CMD_STO | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
     // Polling for the STO to finish.
     i2c_wait_ack(adapter, 30, 0);
     check(pci_bar + REG_CTRL);
@@ -1607,6 +1606,18 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
 
     // Do SMBus communication
     error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+    if(error < 0){
+        dev_dbg( &adapter->dev,"smbus_xfer failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
+           , error, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
+           , size,                  size == 0 ? "QUICK" :
+           size == 1 ? "BYTE" :
+           size == 2 ? "BYTE_DATA" :
+           size == 3 ? "WORD_DATA" :
+           size == 4 ? "PROC_CALL" :
+           size == 5 ? "BLOCK_DATA" :
+           size == 8 ? "I2C_BLOCK_DATA" :  "ERROR"
+           , cmd);
+    }
 
 release_unlock:    
     mutex_unlock(&fpga_i2c_master_locks[master_bus - 1]);
