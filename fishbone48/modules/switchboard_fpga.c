@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.1"
+#define MOD_VERSION "0.3.2"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1242,8 +1242,6 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         }
     }
     info("Status %2.2X", Status);
-    // Read status and flag
-    // Status = ioread8(pci_bar + REG_STAT);
     info("STA:%x",Status);
 
     if (error < 0) {
@@ -1558,6 +1556,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     uint16_t prev_port = 0;
     unsigned char prev_switch;
     unsigned char prev_ch;
+    int retry;
 
     dev_data = i2c_get_adapdata(adapter);
     master_bus = dev_data->pca9548.master_bus;
@@ -1575,16 +1574,32 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
         // Check lasted access switch address on a master
         if ( prev_switch != switch_addr && prev_switch != 0 ) {
             // reset prev_port PCA9548 chip
-            error = smbus_access(adapter, (u16)(prev_switch), flags, I2C_SMBUS_WRITE, 0x00, I2C_SMBUS_BYTE, NULL);
-            if(error < 0){
-                dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
-                goto release_unlock;
+            retry = 3;
+            while(retry--){
+                error = smbus_access(adapter, (u16)(prev_switch), flags, I2C_SMBUS_WRITE, 0x00, I2C_SMBUS_BYTE, NULL);
+                if(error >= 0){
+                    break;
+                }else if(error == -EAGAIN){
+                    dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                }else{
+                    dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                    goto release_unlock;
+                }
+                mdelay(1);
             }
             // set PCA9548 to current channel
-            error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
-            if(error < 0){
-                dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
-                goto release_unlock;
+            retry = 3;
+            while(retry--){
+                error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
+                if(error >= 0){
+                    break;
+                }else if(error == -EAGAIN){
+                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                }else{
+                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                    goto release_unlock;
+                }
+                mdelay(1);
             }
             // update lasted port
             fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
@@ -1593,10 +1608,18 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
             // check if channel is also changes
             if ( prev_ch != channel || prev_switch == 0 ) {
                 // set new PCA9548 at switch_addr to current
-                error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
-                if(error < 0){
-                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
-                    goto release_unlock;
+                retry = 3;
+                while(retry--){
+                    error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_WRITE, 1 << channel, I2C_SMBUS_BYTE, NULL);
+                    if(error >= 0){
+                        break;
+                    }else if(error == -EAGAIN){
+                        dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                    }else{
+                        dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                        goto release_unlock;
+                    }
+                    mdelay(1);
                 }
                 // update lasted port
                 fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
