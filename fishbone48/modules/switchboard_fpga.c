@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.2"
+#define MOD_VERSION "0.3.3"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1196,6 +1196,57 @@ static int i2c_xcvr_access(u8 register_address, unsigned int portid, u8 *data, c
     return 0;
 }
 
+static int wait_RXACK(struct i2c_adapter *a, unsigned long timeout)
+{
+    int error = 0;
+    int Status;
+
+    struct i2c_dev_data *new_data = i2c_get_adapdata(a);
+    void __iomem *pci_bar = fpga_dev.data_base_addr;
+
+    unsigned int REG_FREQ_L;
+    unsigned int REG_FREQ_H;
+    unsigned int REG_CMD;
+    unsigned int REG_CTRL;
+    unsigned int REG_STAT;
+    unsigned int REG_DATA;
+
+    unsigned int master_bus = new_data->pca9548.master_bus;
+
+    if (master_bus < I2C_MASTER_CH_1 || master_bus > I2C_MASTER_CH_TOTAL) {
+        error = -ENXIO;
+        return error;
+    }
+
+    REG_FREQ_L = I2C_MASTER_FREQ_L  + (master_bus - 1) * 0x20;
+    REG_FREQ_H = I2C_MASTER_FREQ_H  + (master_bus - 1) * 0x20;
+    REG_CTRL   = I2C_MASTER_CTRL    + (master_bus - 1) * 0x20;
+    REG_CMD    = I2C_MASTER_CMD     + (master_bus - 1) * 0x20;
+    REG_STAT   = I2C_MASTER_STATUS  + (master_bus - 1) * 0x20;
+    REG_DATA   = I2C_MASTER_DATA    + (master_bus - 1) * 0x20;
+
+    check(pci_bar + REG_STAT);
+    check(pci_bar + REG_CTRL);
+
+    timeout = jiffies + msecs_to_jiffies(timeout);
+    while (1) {
+        udelay(50);
+        Status = ioread8(pci_bar + REG_STAT);
+        if (jiffies > timeout) {
+            info("Status %2.2X", Status);
+            info("Error Timeout");
+            error = -ETIMEDOUT;
+            dev_dbg(&a->dev,"TO:%2.2X\n", Status);
+            break;
+        }
+
+        if ( Status & ( 1 << I2C_STAT_RxACK ) ) {
+            dev_dbg(&a->dev,"NACK:%2.2X\n", Status);
+            break;
+        }
+    }
+}
+
 static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writing) {
     int error = 0;
     int Status;
@@ -1227,9 +1278,11 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
     check(pci_bar + REG_STAT);
     check(pci_bar + REG_CTRL);
 
+    dev_dbg(&a->dev,"ST:%2.2X\n", ioread8(pci_bar + REG_STAT));
     timeout = jiffies + msecs_to_jiffies(timeout);
     while (1) {
         Status = ioread8(pci_bar + REG_STAT);
+        dev_dbg(&a->dev,"ST:%2.2X\n", Status);
         if (jiffies > timeout) {
             info("Status %2.2X", Status);
             info("Error Timeout");
@@ -1238,6 +1291,7 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         }
 
         if ( Status & ( 1 << I2C_STAT_IF ) ) {
+            dev_dbg(&a->dev,"  IF:%2.2X\n", Status);
             break;
         }
     }
@@ -1345,10 +1399,10 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     if (rw == I2C_SMBUS_READ &&
             (size == I2C_SMBUS_QUICK || size == I2C_SMBUS_BYTE)) {
         // sent device address with Read mode
-        iowrite8(addr << 1 | 0x01, pci_bar + REG_DATA);
+        iowrite8( (addr << 1) | 0x01, pci_bar + REG_DATA);
     } else {
         // sent device address with Write mode
-        iowrite8(addr << 1 | 0x00, pci_bar + REG_DATA);
+        iowrite8( (addr << 1) & 0xFE, pci_bar + REG_DATA);
     }
     iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
@@ -1356,6 +1410,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
     //// Wait {A}
     // + IACK
+    wait_RXACK(adapter, 10);
     error = i2c_wait_ack(adapter, 30, 1);
     if (error < 0) {
         info( "get error %d", error);
@@ -1377,6 +1432,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
+        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
@@ -1408,6 +1464,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
+        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
@@ -1437,6 +1494,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
             // Wait {A}
             // IACK
+            wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 1);
             if (error < 0) {
                 goto Done;
@@ -1459,6 +1517,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
         // Wait {A}
+        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             goto Done;
@@ -1503,6 +1562,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             }
             
             // Wait {A}
+            wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 0);
             if (error < 0) {
                 goto Done;
