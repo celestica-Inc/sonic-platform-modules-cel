@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.3"
+#define MOD_VERSION "0.3.4"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1414,6 +1414,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     error = i2c_wait_ack(adapter, 30, 1);
     if (error < 0) {
         info( "get error %d", error);
+        dev_dbg(&adapter->dev,"START Error: %d\n", error);
         goto Done;
     }
 
@@ -1436,6 +1437,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
+            dev_dbg(&adapter->dev,"CMD Error: %d\n", error);
             goto Done;
         }
     }
@@ -1468,6 +1470,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
+            dev_dbg(&adapter->dev,"CNT Error: %d\n", error);
             goto Done;
         }
     }
@@ -1497,6 +1500,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 1);
             if (error < 0) {
+                dev_dbg(&adapter->dev,"Send DATA Error: %d\n", error);
                 goto Done;
             }
         }
@@ -1520,6 +1524,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
+            dev_dbg(&adapter->dev,"Repeat START Error: %d\n", error);
             goto Done;
         }
 
@@ -1565,6 +1570,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 0);
             if (error < 0) {
+                dev_dbg(&adapter->dev,"Receive DATA Error: %d\n", error);
                 goto Done;
             }
             if(size == I2C_SMBUS_I2C_BLOCK_DATA){
