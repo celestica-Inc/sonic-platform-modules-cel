@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.4"
+#define MOD_VERSION "0.3.5"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1410,7 +1410,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
     //// Wait {A}
     // + IACK
-    wait_RXACK(adapter, 10);
     error = i2c_wait_ack(adapter, 30, 1);
     if (error < 0) {
         info( "get error %d", error);
@@ -1433,7 +1432,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
-        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
@@ -1466,7 +1464,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         // Wait {A}
         // IACK
-        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
@@ -1497,7 +1494,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
             // Wait {A}
             // IACK
-            wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 1);
             if (error < 0) {
                 dev_dbg(&adapter->dev,"Send DATA Error: %d\n", error);
@@ -1521,7 +1517,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         iowrite8( 1 << I2C_CMD_STA | 1 << I2C_CMD_WR | 1 << I2C_CMD_IACK, pci_bar + REG_CMD);
 
         // Wait {A}
-        wait_RXACK(adapter, 10);
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             dev_dbg(&adapter->dev,"Repeat START Error: %d\n", error);
@@ -1567,7 +1562,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             }
             
             // Wait {A}
-            wait_RXACK(adapter, 10);
             error = i2c_wait_ack(adapter, 30, 0);
             if (error < 0) {
                 dev_dbg(&adapter->dev,"Receive DATA Error: %d\n", error);
