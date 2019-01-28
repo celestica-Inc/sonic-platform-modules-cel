@@ -25,7 +25,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.9"
+#define MOD_VERSION "0.4.0"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -286,7 +286,7 @@ PORT XCVR       0x00004000 - 0x00004FFF
 /* I2C master clock speed */
 // NOTE: Only I2C clock in normal mode is support here.
 enum {
-    I2C_DIV_100K = 0x80,
+    I2C_DIV_100K = 0x71,
 };
 
 /* I2C Master control register */
