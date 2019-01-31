@@ -15,7 +15,7 @@ override_dh_auto_build:
 		make -C $(KERNEL_SRC)/build M=$(MOD_SRC_DIR)/$${mod}/modules; \
 	done)
 	make -C $(MOD_SRC_DIR)/tools/ispvme_12.2;
-	gcc $(MOD_SRC_DIR)/tools/fpga_prog/fpga_prog.c -o $(MOD_SRC_DIR)/tools/fpga_prog/fpga_prog;
+	gcc -std=c99 $(MOD_SRC_DIR)/tools/fpga_prog/fpga_prog.c -o $(MOD_SRC_DIR)/tools/fpga_prog/fpga_prog;
 
 override_dh_auto_install:
 	(for mod in $(MODULE_DIRS); do \
