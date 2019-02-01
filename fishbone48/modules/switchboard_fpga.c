@@ -2306,6 +2306,7 @@ int fishbone48_init(void)
     if (rc)
         return rc;
     if (fpga_dev.data_base_addr == NULL) {
+        pci_unregister_driver(&pci_dev_ops);
         printk(KERN_ALERT "FPGA PCIe device not found!\n");
         return -ENODEV;
     }
