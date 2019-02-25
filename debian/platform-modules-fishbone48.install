@@ -1,4 +1,5 @@
 fishbone48/cfg/fishbone48-modules.conf etc/modules-load.d
+fishbone48/systemd/platform-modules-fishbone48.service lib/systemd/system
 tools/sync_bmc/bmc_vlan.service etc/systemd/system
 tools/sync_bmc/sync_bmc.service etc/systemd/system
 tools/sync_bmc/sync_bmc.timer etc/systemd/system

@@ -1,0 +1,14 @@
+
+[Unit]
+Description=Celestica Fishbone48 platform modules
+After=local-fs.target
+Before=pmon.service
+
+[Service]
+Type=oneshot
+ExecStart=-/etc/init.d/platform-modules-fishbone48 start
+ExecStop=-/etc/init.d/platform-modules-fishbone48 stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

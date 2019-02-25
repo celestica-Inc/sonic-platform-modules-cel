@@ -3,8 +3,8 @@ depmod -a
 # Enable bmc vlan_ip service
 systemctl enable bmc_vlan.service
 
-update-rc.d platform-modules-fishbone32 defaults
-service platform-modules-fishbone32 start
+systemctl enable platform-modules-fishbone32.service
+systemctl start platform-modules-fishbone32.service
 
 # Enable platform-sync_bmc-timer
 # systemctl enable sync_bmc.timer

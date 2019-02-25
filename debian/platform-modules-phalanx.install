@@ -1,4 +1,5 @@
 phalanx/cfg/phalanx-modules.conf etc/modules-load.d
+phalanx/systemd/platform-modules-phalanx.service lib/systemd/system
 tools/sync_bmc/bmc_vlan.service etc/systemd/system
 tools/sync_bmc/sync_bmc.service etc/systemd/system
 tools/sync_bmc/sync_bmc.timer etc/systemd/system

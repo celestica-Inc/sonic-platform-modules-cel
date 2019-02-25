@@ -3,8 +3,8 @@ depmod -a
 # Enable bmc vlan_ip service
 systemctl enable bmc_vlan.service
 
-update-rc.d platform-modules-phalanx defaults
-service platform-modules-phalanx start
+systemctl enable platform-modules-phalanx.service
+systemctl start platform-modules-phalanx.service
 
 # Enable platform-sync_bmc-timer
 # systemctl enable sync_bmc.timer
