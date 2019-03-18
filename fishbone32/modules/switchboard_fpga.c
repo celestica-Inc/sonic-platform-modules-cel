@@ -24,7 +24,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.4.1"
+#define MOD_VERSION "0.4.2"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -2022,6 +2022,14 @@ static int fishbone32_drv_remove(struct platform_device *pdev)
     return 0;
 }
 
+static struct platform_driver fishbone32_drv = {
+    .probe  = fishbone32_drv_probe,
+    .remove = __exit_p(fishbone32_drv_remove),
+    .driver = {
+        .name   = DRIVER_NAME,
+    },
+};
+
 #ifdef TEST_MODE
 #define FPGA_PCI_BAR_NUM 2
 #else
@@ -2079,6 +2087,8 @@ static int fpga_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     fpga_version = ioread32(fpga_dev.data_base_addr);
     printk(KERN_INFO "FPGA Version : %8.8x\n", fpga_version);
     fpgafw_init();
+    platform_device_register(&fishbone32_dev);
+    platform_driver_register(&fishbone32_drv);
     return 0;
 
 pci_release:
@@ -2090,6 +2100,8 @@ pci_disable:
 
 static void fpga_pci_remove(struct pci_dev *pdev)
 {
+    platform_driver_unregister(&fishbone32_drv);
+    platform_device_unregister(&fishbone32_dev);
     fpgafw_exit();
     pci_iounmap(pdev, fpga_dev.data_base_addr);
     pci_release_regions(pdev);
@@ -2102,15 +2114,6 @@ static struct pci_driver pci_dev_ops = {
     .probe      = fpga_pci_probe,
     .remove     = fpga_pci_remove,
     .id_table   = fpga_id_table,
-};
-
-
-static struct platform_driver fishbone32_drv = {
-    .probe  = fishbone32_drv_probe,
-    .remove = __exit_p(fishbone32_drv_remove),
-    .driver = {
-        .name   = DRIVER_NAME,
-    },
 };
 
 enum {
@@ -2238,20 +2241,11 @@ int fishbone32_init(void)
     rc = pci_register_driver(&pci_dev_ops);
     if (rc)
         return rc;
-    if (fpga_dev.data_base_addr == NULL) {
-        pci_unregister_driver(&pci_dev_ops);
-        printk(KERN_ALERT "FPGA PCIe device not found!\n");
-        return -ENODEV;
-    }
-    platform_device_register(&fishbone32_dev);
-    platform_driver_register(&fishbone32_drv);
     return 0;
 }
 
 void fishbone32_exit(void)
 {
-    platform_driver_unregister(&fishbone32_drv);
-    platform_device_unregister(&fishbone32_dev);
     pci_unregister_driver(&pci_dev_ops);
 }
 
