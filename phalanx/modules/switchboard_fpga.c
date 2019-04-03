@@ -17,14 +17,13 @@
  *                \--AS23128h.switchboard
  *                    |--FPGA
  *                    |--CPLD[1..4]
- *                    |--FAN_CPLD
  *                    \--SFF
  *                        \--QSFP[1..128]
  *
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.3.2"
+#define MOD_VERSION "0.4.0"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1659,10 +1658,14 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         return error;
     }
 
+    /** There is only one master in each bus. If this error happen something is 
+      * not normal in i2c transfer refer to:
+      * https://www.i2c-bus.org/i2c-primer/analysing-obscure-problems/master-reports-arbitration-lost 
+      */
     // Arbitration lost
     if (Status & (1 << I2C_STAT_AL)) {
         info("Error arbitration lost");
-        return -EAGAIN;
+        return -EBUSY;
     }
 
     // Ack not received
@@ -1964,20 +1967,23 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                            unsigned short flags, char rw, u8 cmd,
                            int size, union i2c_smbus_data *data)
 {
-    int error = 0;
+    int error, retval = 0;
     struct i2c_dev_data *dev_data;
     unsigned char master_bus;
     unsigned char switch_addr;
     unsigned char channel;
+    unsigned char *calling_name;
     uint16_t prev_port = 0;
     unsigned char prev_switch;
     unsigned char prev_ch;
-    int retry;
+    uint8_t read_channel;
+    int retry = 0;
 
     dev_data = i2c_get_adapdata(adapter);
     master_bus = dev_data->pca9548.master_bus;
     switch_addr = dev_data->pca9548.switch_addr;
     channel = dev_data->pca9548.channel;
+    calling_name = dev_data->pca9548.calling_name;
 
     // Acquire the master resource.
     mutex_lock(&fpga_i2c_master_locks[master_bus - 1]);
@@ -1998,10 +2004,11 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                 }else{
                     dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
                 }
-                mdelay(1);
+
             }
-            if(retry == 0)
+            if(retry < 0){
                 goto release_unlock;
+            }
             // set PCA9548 to current channel
             retry = 3;
             while(retry--){
@@ -2011,10 +2018,11 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                 }else{
                     dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
                 }
-                mdelay(1);
+
             }
-            if(retry == 0)
+            if(retry < 0){
                 goto release_unlock;
+            }
             // update lasted port
             fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
 
@@ -2029,11 +2037,12 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                         break;
                     }else{
                     dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                    }
+
                 }
-                mdelay(1);
-            }
-            if(retry == 0)
-                goto release_unlock;
+                if(retry < 0){
+                    goto release_unlock;
+                }
                 // update lasted port
                 fpga_i2c_lasted_access_port[master_bus - 1] = switch_addr << 8 | channel;
             }
@@ -2042,6 +2051,19 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
 
     // Do SMBus communication
     error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+    if(error == -EBUSY){
+        retry = 5;
+    }
+    // If the first access failed, do retry.
+    while( (error < 0)  && retry){
+        retry--;
+        dev_dbg(&adapter->dev,"error = %d\n",error);
+        error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+        dev_dbg(&adapter->dev,"nack retry = %d\n",retry);
+    }
+
+    retval = error;
+
     if(error < 0){
         dev_dbg( &adapter->dev,"smbus_xfer failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
            , error, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
@@ -2053,12 +2075,71 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
            size == 5 ? "BLOCK_DATA" :
            size == 8 ? "I2C_BLOCK_DATA" :  "ERROR"
            , cmd);
+    }else{
+        goto release_unlock;
     }
+
+    /** For the bus with PCA9548, try to read PCA9548 one more time.
+     *  For the bus w/o PCA9548 just check the return from last time.
+     */
+    if (switch_addr != 0xFF) {
+        error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE, (union i2c_smbus_data*)&read_channel);
+        dev_dbg(&adapter->dev,"Try access I2C switch device at %2.2x\n", switch_addr);
+        if(error < 0){
+            dev_dbg(&adapter->dev,"Unbale to access switch device.\n");
+        }else{
+            dev_dbg(&adapter->dev,"Read success, register val %2.2x\n", read_channel);
+        }
+    }
+
+    // If retry was used up(retry = 0) and the last transfer result is -EBUSY
+    if(retry <= 0 && error == -EBUSY ){
+        retval = error;
+        // raise device error message
+        dev_err(&adapter->dev, "I2C bus hangup detected on %s port.\n", calling_name);
+
+        /**
+         * Phalanx: Device specific I2C reset topology
+         */
+        if( master_bus == I2C_MASTER_CH_11 || master_bus == I2C_MASTER_CH_12 || 
+            master_bus == I2C_MASTER_CH_13 || master_bus == I2C_MASTER_CH_14 ){
+            dev_notice(&adapter->dev, "Trying bus recovery...\n");
+            dev_notice(&adapter->dev, "Reset I2C switch device.\n");
+            
+            // reset PCA9548 on the current BUS.
+            if(master_bus == I2C_MASTER_CH_11){
+                // LC1_I2C3_RST_N .. LC1_I2C0_RST_N
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x0108) & 0xF0, fpga_dev.data_base_addr + 0x0108);
+                udelay(1);
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x0108) | 0x0F, fpga_dev.data_base_addr + 0x0108);
+            }else if(master_bus == I2C_MASTER_CH_12){
+                // LC1_I2C7_RST_N .. LC1_I2C4_RST_N
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x0108) & 0x8F, fpga_dev.data_base_addr + 0x0108);
+                udelay(1);
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x0108) | 0x70, fpga_dev.data_base_addr + 0x0108);
+            }else if(master_bus == I2C_MASTER_CH_13){
+                // LC2_I2C3_RST_N .. LC2_I2C0_RST_N
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x010c) & 0xF0, fpga_dev.data_base_addr + 0x010c);
+                udelay(1);
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x010c) | 0x0F, fpga_dev.data_base_addr + 0x010c);
+            }else if(master_bus == I2C_MASTER_CH_14){
+                // LC2_I2C7_RST_N .. LC2_I2C4_RST_N
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x010c) & 0x8F, fpga_dev.data_base_addr + 0x010c);
+                udelay(1);
+                iowrite8( ioread8(fpga_dev.data_base_addr + 0x010c) | 0x70, fpga_dev.data_base_addr + 0x010c);
+            }
+            // clear the last access port 
+            fpga_i2c_lasted_access_port[master_bus - 1] = 0;
+        }else{
+            dev_crit(&adapter->dev, "I2C bus unrecoverable.\n");
+        }
+    }
+
 
 release_unlock:    
     mutex_unlock(&fpga_i2c_master_locks[master_bus - 1]);
     dev_dbg(&adapter->dev,"switch ch %d of 0x%x -> ch %d of 0x%x\n", prev_ch, prev_switch, channel, switch_addr);
-    return error;
+    return retval;
 }
 
 /**
