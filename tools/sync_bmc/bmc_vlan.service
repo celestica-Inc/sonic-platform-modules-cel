@@ -1,8 +1,8 @@
 [Unit]
 Description="Service for add vlan for rsyslog"
-After=dhcp_relay.service
+After=network.target
 Before=rsyslog-config.service
-Before=rsyslog.service
+Before=ntp.service
 
 [Service]
 Type=forking
