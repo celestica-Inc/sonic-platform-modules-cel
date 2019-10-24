@@ -11,3 +11,4 @@ tools/bmcutil/bmcpwd /usr/local/etc/
 tools/bmcutil/bmcutil.py /usr/local/etc/
 tools/bmc_wdt/bmc_wdt.service etc/systemd/system
 tools/bmc_wdt/bmc_wdt.py /usr/local/etc/
+tools/power_utils/power_utils /usr/local/bin

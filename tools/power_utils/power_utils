@@ -1,0 +1,94 @@
+#!/bin/bash
+#
+# Copyright 2019-present Celestica. All Rights Reserved.
+#
+# This program file is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+# for more details.
+#
+#
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
+
+prog="$0"
+
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root"
+    exit 1
+fi
+
+usage() {
+    echo "Usage: $prog <command>"
+    echo
+    echo "Commands:"
+    echo
+    echo "  cpu cycle:  To power cycle the CPU"
+    echo
+    echo "  system reboot : To reboot the whole system"
+    echo
+}
+
+cpu_cycle() {
+    echo "Power cycling CPU..."
+    curl -m 5 -d '{"data":"/usr/local/bin/wedge_power.sh off;/usr/local/bin/wedge_power.sh on"}' http://240.1.1.1:8080/api/sys/raw
+    ret=$?
+    if [ $ret -ne 0 ]; then
+        echo "Failed to power cycle the CPU"
+    fi
+    return 0
+}
+
+system_reboot() {
+    echo "Rebooting system..."
+    curl -m 5 -d '{"data":"/usr/local/bin/wedge_power.sh off;/usr/local/bin/wedge_power.sh on;reboot"}' http://240.1.1.1:8080/api/sys/raw
+    ret=$?
+    if [ $ret -ne 0 ]; then
+        echo "Failed to reboot the system"
+    fi
+    return 0
+}
+
+if [ $# -lt 1 ]; then
+    usage
+    exit -1
+fi
+
+unit="$1"
+command="$2"
+shift
+
+case "$unit" in
+cpu)
+    case "$command" in
+    cycle)
+        cpu_cycle
+        ;;
+    *)
+        usage
+        exit -1
+        ;;
+    esac
+    ;;
+system)
+    case "$command" in
+    reboot)
+        system_reboot
+        ;;
+    *)
+        usage
+        exit -1
+        ;;
+    esac
+    ;;
+*)
+    usage
+    exit -1
+    ;;
+esac
+
+exit $?
