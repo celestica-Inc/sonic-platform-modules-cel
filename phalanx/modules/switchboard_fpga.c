@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.1"
+#define MOD_VERSION "0.5.2"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1987,6 +1987,10 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
 
         info( "MS Receive");
 
+        /* Set ff_counts default to 1. 
+         * If no consecutive found, the value still 1.
+         */
+        ff_count = 1;
         for (bid = 0; bid < cnt; bid++) {
 
             // Start receive FSM
@@ -2009,9 +2013,13 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
                 goto Done;
             }
             if(size == I2C_SMBUS_I2C_BLOCK_DATA){
-            /* block[0] is read length */
+                /* block[0] is read length */
                 data->block[bid+1] = ioread8(pci_bar + REG_DATA);
-                if (data->block[bid+1] == 0xFF){
+                /* 
+                 * Record consecutive 0xFF data.
+                 * If the last time value was 0xFF and current data is 0xFF, add counter by 1.
+                 */
+                if (data->block[bid+1] == 0xFF && data->block[bid] == 0xFF){
                     ff_count += 1;
                 }
                 dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
@@ -2023,7 +2031,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
                 cnt = data->block[0] + 1;
             }
         }
-        /* Detects 0xFF values and print the whole transaction out when double FF found */
+        /* Detects 0xFF values and print the whole transaction out when consecutive FF found */
         if (ff_count >= 2) {
             dev_err(&adapter->dev, "FFs found, READ=%d, FF_CNT=%d", cnt, ff_count);
             for (bid = 0; bid < cnt; bid++) {
