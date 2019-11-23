@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.2"
+#define MOD_VERSION "0.5.3"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -283,7 +283,7 @@ PORT XCVR       0x00004000 - 0x00004FFF
 /* I2C master clock speed */
 // NOTE: Only I2C clock in normal mode is support here.
 enum {
-    I2C_DIV_100K = 0x71,
+    I2C_DIV_100K = 0x7C,
 };
 
 /* I2C Master control register */
@@ -364,6 +364,7 @@ static struct mutex fpga_i2c_master_locks[I2C_MASTER_CH_TOTAL];
 static uint16_t fpga_i2c_lasted_access_port[I2C_MASTER_CH_TOTAL];
 static int nack_retry[I2C_MASTER_CH_TOTAL];
 static int need_retry[I2C_MASTER_CH_TOTAL];
+static int status_debug_en[I2C_MASTER_CH_TOTAL];
 
 enum PORT_TYPE {
     NONE,
@@ -1634,21 +1635,26 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
     check(pci_bar + REG_STAT);
     check(pci_bar + REG_CTRL);
 
-    dev_dbg(&a->dev,"ST:%2.2X\n", ioread8(pci_bar + REG_STAT));
+    if(status_debug_en[master_bus - 1] == 1){
+        dev_notice(&a->dev,"%s I2C_%d, enter:%2.2X\n", __func__, master_bus, ioread8(pci_bar + REG_STAT));
+    }
+    /* From i2c-ocores:
+     * We wait for the data to be transferred (8bit),
+     * then we start polling on the ACK/NACK bit
+     * udelay((8 * 1000) / i2c->bus_clock_khz);
+     */
+    udelay((8 * 1000) / 100);
     timeout = jiffies + msecs_to_jiffies(timeout);
     while (1) {
         Status = ioread8(pci_bar + REG_STAT);
-        dev_dbg(&a->dev,"ST:%2.2X\n", Status);
 
-        if ( (Status & ( 1 << I2C_STAT_TIP ))  == 0 ) 
-        {
-            dev_dbg(&a->dev,"  ST:%2.2X\n", Status);
+        if ( (Status & ( 1 << I2C_STAT_TIP ))  == 0 ) {
+            dev_dbg(&a->dev," %s I2C_%d, TIP: %2.2X\n", __func__ , master_bus, Status);
             break;
         }
 
         if (time_after(jiffies, timeout)) {
-            info("Status %2.2X", Status);
-            info("Error Timeout");
+            dev_warn(&a->dev, "%s I2C_%d, STATUS timeout: %2.2X\n", __func__, master_bus, Status);
             error = -ETIMEDOUT;
             break;
         }
@@ -1656,12 +1662,12 @@ static int i2c_wait_ack(struct i2c_adapter *a, unsigned long timeout, int writin
         cpu_relax();
         cond_resched();
     }
-    info("Status %2.2X", Status);
-    info("STA:%x",Status);
+
+    if(status_debug_en[master_bus - 1] == 1){
+        dev_notice(&a->dev,"%s I2C_%d, exit:%2.2X\n", __func__, master_bus, ioread8(pci_bar + REG_STAT));
+    }
 
     if (error < 0) {
-        info("Status %2.2X", Status);
-
         return error;
     }
 
@@ -2021,6 +2027,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
                  */
                 if (data->block[bid+1] == 0xFF && data->block[bid] == 0xFF){
                     ff_count += 1;
+                    status_debug_en[master_bus - 1] = 1;
                 }
                 dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
             }else {
@@ -2035,7 +2042,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         if (ff_count >= 2) {
             dev_err(&adapter->dev, "FFs found, READ=%d, FF_CNT=%d", cnt, ff_count);
             for (bid = 0; bid < cnt; bid++) {
-                dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
+                dev_err(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
             }
             dev_err(&adapter->dev, "read_ff portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X ",
                 portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
@@ -2163,6 +2170,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     // Do SMBus communication
     nack_retry[master_bus - 1] = 0;
     need_retry[master_bus - 1] = 0;
+    status_debug_en[master_bus -1] = 0;
     error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
     if((nack_retry[master_bus - 1]==1)&&(need_retry[master_bus - 1]==1))
         retry = 2000;
