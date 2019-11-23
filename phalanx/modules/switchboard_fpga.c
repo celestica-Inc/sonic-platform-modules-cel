@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.0"
+#define MOD_VERSION "0.5.1"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1766,6 +1766,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     struct i2c_dev_data *dev_data;
     void __iomem *pci_bar;
     unsigned int  portid, master_bus;
+    int ff_count = 0;
 
     unsigned int REG_FREQ_L;
     unsigned int REG_FREQ_H;
@@ -2010,14 +2011,33 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             if(size == I2C_SMBUS_I2C_BLOCK_DATA){
             /* block[0] is read length */
                 data->block[bid+1] = ioread8(pci_bar + REG_DATA);
-                info( "DATA IN [%d] %2.2X", bid+1, data->block[bid+1]);
+                if (data->block[bid+1] == 0xFF){
+                    ff_count += 1;
+                }
+                dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
             }else {
                 data->block[bid] = ioread8(pci_bar + REG_DATA);
-                info( "DATA IN [%d] %2.2X", bid, data->block[bid]);
+                dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid, data->block[bid]);
             }
             if (size == I2C_SMBUS_BLOCK_DATA && bid == 0) {
                 cnt = data->block[0] + 1;
             }
+        }
+        /* Detects 0xFF values and print the whole transaction out when double FF found */
+        if (ff_count >= 2) {
+            dev_err(&adapter->dev, "FFs found, READ=%d, FF_CNT=%d", cnt, ff_count);
+            for (bid = 0; bid < cnt; bid++) {
+                dev_dbg(&adapter->dev, "DATA IN [%d] %2.2X\n", bid+1, data->block[bid+1]);
+            }
+            dev_err(&adapter->dev, "read_ff portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X ",
+                portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
+                size,                  size == 0 ? "QUICK" :
+                size == 1 ? "BYTE" :
+                size == 2 ? "BYTE_DATA" :
+                size == 3 ? "WORD_DATA" :
+                size == 4 ? "PROC_CALL" :
+                size == 5 ? "BLOCK_DATA" :
+                size == 8 ? "I2C_BLOCK_DATA" :  "ERROR", cmd);
         }
     }
 
@@ -2099,7 +2119,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                 if(error >= 0){
                     break;
                 }else{
-                    dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
                 }
 
             }
@@ -2119,7 +2139,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                     if(error >= 0){
                         break;
                     }else{
-                    dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                        dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
                     }
 
                 }
