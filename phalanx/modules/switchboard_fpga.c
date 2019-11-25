@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.3"
+#define MOD_VERSION "0.5.4"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1728,33 +1728,28 @@ static int i2c_wait_stop(struct i2c_adapter *a, unsigned long timeout, int writi
     check(pci_bar + REG_STAT);
     check(pci_bar + REG_CTRL);
 
-    dev_dbg(&a->dev,"ST:%2.2X\n", ioread8(pci_bar + REG_STAT));
+    dev_dbg(&a->dev,"%s I2C_%d, enter:%2.2X\n", __func__, master_bus, ioread8(pci_bar + REG_STAT));
     timeout = jiffies + msecs_to_jiffies(timeout);
     while (1) {
         Status = ioread8(pci_bar + REG_STAT);
-        dev_dbg(&a->dev,"ST:%2.2X\n", Status);
-        if (time_after(jiffies, timeout)) {
-            info("Status %2.2X", Status);
-            info("Error Timeout");
-            error = -ETIMEDOUT;
-            break;
-        }
         // In STOP state, we wait for busy to be cleared
         // So we know the STOP was sent successfully.
-        if ( (Status & ( 1 << I2C_STAT_BUSY ))  == 0 ) 
-        {
-            dev_dbg(&a->dev,"  IF:%2.2X\n", Status);
+        if ( (Status & ( 1 << I2C_STAT_BUSY ))  == 0 ) {
+            dev_dbg(&a->dev," %s I2C_%d, BUSY: %2.2X\n", __func__ , master_bus, Status);
+            break;
+        }
+
+        if (time_after(jiffies, timeout)) {
+            dev_warn(&a->dev, "%s I2C_%d, STATUS timeout: %2.2X\n", __func__, master_bus, Status);
+            error = -ETIMEDOUT;
             break;
         }
 
         cpu_relax();
         cond_resched();
     }
-    info("Status %2.2X", Status);
-    info("STA:%x",Status);
 
     if (error < 0) {
-        info("Status %2.2X", Status);
         return error;
     }
     return 0;
@@ -2191,8 +2186,8 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     retval = error;
 
     if(error < 0){
-        dev_dbg( &adapter->dev,"smbus_xfer failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
-           , error, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
+        dev_dbg( &adapter->dev,"smbus_xfer I2C_%d, failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
+           , master_bus, error, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
            , size,                  size == 0 ? "QUICK" :
            size == 1 ? "BYTE" :
            size == 2 ? "BYTE_DATA" :
