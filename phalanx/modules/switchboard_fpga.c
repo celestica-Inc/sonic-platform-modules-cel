@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.4"
+#define MOD_VERSION "0.5.5"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1787,21 +1787,19 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     dev_data = i2c_get_adapdata(adapter);
     portid = dev_data->portid;
     pci_bar = fpga_dev.data_base_addr;
+    master_bus = dev_data->pca9548.master_bus;
 
-#ifdef DEBUG_KERN
-    printk(KERN_INFO "portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
-           , portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
-           , size,                  size == 0 ? "QUICK" :
+    dev_dbg(&adapter->dev, "%s I2C_%d, portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD 0x%2.2X ", 
+           __func__, master_bus, portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
+           size,
+           size == 0 ? "QUICK" :
            size == 1 ? "BYTE" :
            size == 2 ? "BYTE_DATA" :
            size == 3 ? "WORD_DATA" :
            size == 4 ? "PROC_CALL" :
            size == 5 ? "BLOCK_DATA" :
-           size == 8 ? "I2C_BLOCK_DATA" :  "ERROR"
-           , cmd);
-#endif
+           size == 8 ? "I2C_BLOCK_DATA" :  "ERROR", cmd);
 
-    master_bus = dev_data->pca9548.master_bus;
     error = i2c_core_init(master_bus, I2C_DIV_100K, fpga_dev.data_base_addr);
 
     /* Map the size to what the chip understands */
@@ -1818,8 +1816,6 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         error = -EOPNOTSUPP;
         goto Done;
     }
-
-    master_bus = dev_data->pca9548.master_bus;
 
     if (master_bus < I2C_MASTER_CH_1 || master_bus > I2C_MASTER_CH_TOTAL) {
         error = -EINVAL;
@@ -1851,7 +1847,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     error = i2c_wait_ack(adapter, 30, 1);
     if (error < 0) {
         info( "get error %d", error);
-        dev_dbg(&adapter->dev,"START Error: %d\n", error);
+        dev_dbg(&adapter->dev,"I2C_%d, START Error: %d\n", master_bus, error);
         goto Done;
     }
 
@@ -1873,7 +1869,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
-            dev_dbg(&adapter->dev,"CMD Error: %d\n", error);
+            dev_dbg(&adapter->dev,"I2C_%d, CMD Error: %d\n", master_bus, error);
             goto Done;
         }
     }
@@ -1905,7 +1901,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
             info( "get error %d", error);
-            dev_dbg(&adapter->dev,"CNT Error: %d\n", error);
+            dev_dbg(&adapter->dev,"I2C_%d, CNT Error: %d\n", master_bus, error);
             goto Done;
         }
     }
@@ -1934,7 +1930,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
             // IACK
             error = i2c_wait_ack(adapter, 30, 1);
             if (error < 0) {
-                dev_dbg(&adapter->dev,"Send DATA Error: %d\n", error);
+                dev_dbg(&adapter->dev,"I2C_%d, Send DATA Error: %d\n", master_bus, error);
                 goto Done;
             }
         }
@@ -1957,7 +1953,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
         // Wait {A}
         error = i2c_wait_ack(adapter, 30, 1);
         if (error < 0) {
-            dev_dbg(&adapter->dev,"Repeat START Error: %d\n", error);
+            dev_dbg(&adapter->dev,"I2C_%d, Repeat START Error: %d\n", master_bus, error);
             goto Done;
         }
 
@@ -2010,7 +2006,8 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
                 need_retry[master_bus - 1] = 1;
             }
             if (error < 0) {
-                dev_dbg(&adapter->dev,"Receive DATA Error: %d\n", error);
+                dev_dbg(&adapter->dev,"I2C_%d Receive Error: %d, byte %d of type %d\n", 
+                        master_bus, error, size == 8 ? bid+1: bid, size);
                 goto Done;
             }
             if(size == I2C_SMBUS_I2C_BLOCK_DATA){
@@ -2066,6 +2063,32 @@ Done:
     return error;
 }
 
+
+
+/**
+ * Break down the block data into byte data access.
+ * Stop if any error occured.
+ */
+static int smbus_access_i2c_block_to_byte(struct i2c_adapter *adapter, u16 addr,
+                                          unsigned short flags, char rw, u8 cmd,
+                                          int size, union i2c_smbus_data *data)
+{
+    int cnt = 0;
+    int bid = 0;
+    int error = 0;
+    u8 buff;
+
+    cnt = data->block[0];
+    for (bid = 0; bid < cnt; bid++) {
+        dev_dbg(&adapter->dev,"%s, byte %d of %d\n", __func__, bid+1, cnt);
+        error = smbus_access(adapter, addr, flags, rw, cmd+bid, 2, (union i2c_smbus_data*)&buff);
+        if(error < 0)
+            break;
+        data->block[bid+1] = buff;
+    }
+    return error;
+}
+
 /**
  * Wrapper of smbus_access access with PCA9548 I2C switch management.
  * This function set PCA9548 switches to the proper slave channel.
@@ -2115,7 +2138,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                 if(error >= 0){
                     break;
                 }else{
-                    dev_dbg(&adapter->dev,"Failed to deselect ch %d of 0x%x, CODE %d\n", prev_ch, prev_switch, error);
+                    dev_dbg(&adapter->dev,"I2C_%d Failed to deselect ch %d of 0x%x, CODE %d\n", master_bus, prev_ch, prev_switch, error);
                 }
 
             }
@@ -2129,7 +2152,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                 if(error >= 0){
                     break;
                 }else{
-                    dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                    dev_dbg(&adapter->dev,"I2C_%d Failed to select ch %d of 0x%x, CODE %d\n", master_bus, channel, switch_addr, error);
                 }
 
             }
@@ -2149,7 +2172,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
                     if(error >= 0){
                         break;
                     }else{
-                        dev_dbg(&adapter->dev,"Failed to select ch %d of 0x%x, CODE %d\n", channel, switch_addr, error);
+                        dev_dbg(&adapter->dev,"I2C_%d, Failed to select ch %d of 0x%x, CODE %d\n", master_bus, channel, switch_addr, error);
                     }
 
                 }
@@ -2166,19 +2189,30 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     nack_retry[master_bus - 1] = 0;
     need_retry[master_bus - 1] = 0;
     status_debug_en[master_bus -1] = 0;
-    error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+    /* If the transaction was I2C_BLOCK_DATA, breakdown into BYTE_DATA */
+    if(size == 8){
+        error = smbus_access_i2c_block_to_byte(adapter, addr, flags, rw, cmd, size, data);
+    }else{
+        error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+    }
+
     if((nack_retry[master_bus - 1]==1)&&(need_retry[master_bus - 1]==1))
         retry = 2000;
     else
         retry = 5;
+
     // If the first access failed, do retry.
     while((nack_retry[master_bus - 1]==1)&&retry)
     {
-        retry--;
+        dev_dbg(&adapter->dev,"Error I2C_%d: %d, accessing dev 0x%2.2X CMD 0x%2.2X, retry=%d\n", 
+                master_bus, error, addr, cmd, retry);
         nack_retry[master_bus - 1] = 0;
-        dev_dbg(&adapter->dev,"error = %d\n",error);
-        error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
-        dev_dbg(&adapter->dev,"nack retry = %d\n",retry);
+        if(size == 8){
+            error = smbus_access_i2c_block_to_byte(adapter, addr, flags, rw, cmd, size, data);
+        }else{
+            error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
+        }
+        retry--;
     }
     nack_retry[master_bus - 1] = 0;
     need_retry[master_bus - 1] = 0;
@@ -2186,16 +2220,16 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     retval = error;
 
     if(error < 0){
-        dev_dbg( &adapter->dev,"smbus_xfer I2C_%d, failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD %2.2X "
-           , master_bus, error, addr, flags, rw, rw == 1 ? "READ " : "WRITE"
-           , size,                  size == 0 ? "QUICK" :
-           size == 1 ? "BYTE" :
-           size == 2 ? "BYTE_DATA" :
-           size == 3 ? "WORD_DATA" :
-           size == 4 ? "PROC_CALL" :
-           size == 5 ? "BLOCK_DATA" :
-           size == 8 ? "I2C_BLOCK_DATA" :  "ERROR"
-           , cmd);
+        dev_dbg( &adapter->dev,"smbus_xfer I2C_%d, failed (%d) @ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD 0x%2.2X ",
+            master_bus, error, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
+            size,
+            size == 0 ? "QUICK" :
+            size == 1 ? "BYTE" :
+            size == 2 ? "BYTE_DATA" :
+            size == 3 ? "WORD_DATA" :
+            size == 4 ? "PROC_CALL" :
+            size == 5 ? "BLOCK_DATA" :
+            size == 8 ? "I2C_BLOCK_DATA" :  "ERROR", cmd);
     }else{
         goto release_unlock;
     }
@@ -2205,7 +2239,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
      */
     if (switch_addr != 0xFF) {
         error = smbus_access(adapter, switch_addr, flags, I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE, (union i2c_smbus_data*)&read_channel);
-        dev_dbg(&adapter->dev,"Try access I2C switch device at %2.2x\n", switch_addr);
+        dev_dbg(&adapter->dev,"I2C_%d, Try access I2C switch device at %2.2x\n", master_bus, switch_addr);
         if(error < 0){
             dev_dbg(&adapter->dev,"Unbale to access switch device.\n");
         }else{
@@ -2217,15 +2251,15 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     if(retry <= 0 && error == -EBUSY ){
         retval = error;
         // raise device error message
-        dev_err(&adapter->dev, "I2C bus hangup detected on %s port.\n", calling_name);
+        dev_err(&adapter->dev, "I2C_%d bus hangup detected on %s port.\n", master_bus, calling_name);
 
         /**
          * Phalanx: Device specific I2C reset topology
          */
         if( master_bus == I2C_MASTER_CH_11 || master_bus == I2C_MASTER_CH_12 || 
             master_bus == I2C_MASTER_CH_13 || master_bus == I2C_MASTER_CH_14 ){
-            dev_notice(&adapter->dev, "Trying bus recovery...\n");
-            dev_notice(&adapter->dev, "Reset I2C switch device.\n");
+            dev_notice(&adapter->dev, "I2C_%d, Trying bus recovery...\n", master_bus);
+            dev_notice(&adapter->dev, "Reset I2C_%d switch devices.\n", master_bus);
             
             // reset PCA9548 on the current BUS.
             if(master_bus == I2C_MASTER_CH_11){
@@ -2252,7 +2286,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
             // clear the last access port 
             fpga_i2c_lasted_access_port[master_bus - 1] = 0;
         }else{
-            dev_crit(&adapter->dev, "I2C bus unrecoverable.\n");
+            dev_crit(&adapter->dev, "I2C_%d bus unrecoverable.\n", master_bus);
         }
     }
 
