@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.5"
+#define MOD_VERSION "0.5.6"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -1768,6 +1768,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     void __iomem *pci_bar;
     unsigned int  portid, master_bus;
     int ff_count = 0;
+    int error_stop = 0;
 
     unsigned int REG_FREQ_L;
     unsigned int REG_FREQ_H;
@@ -1789,7 +1790,7 @@ static int smbus_access(struct i2c_adapter *adapter, u16 addr,
     pci_bar = fpga_dev.data_base_addr;
     master_bus = dev_data->pca9548.master_bus;
 
-    dev_dbg(&adapter->dev, "%s I2C_%d, portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD 0x%2.2X ", 
+    dev_dbg(&adapter->dev, "enter: %s I2C_%d, portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD 0x%2.2X\n", 
            __func__, master_bus, portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
            size,
            size == 0 ? "QUICK" :
@@ -2053,9 +2054,19 @@ Done:
     // SET STOP
     iowrite8( 1 << I2C_CMD_STO, pci_bar + REG_CMD);
     // Wait for the STO to finish.
-    i2c_wait_stop(adapter, 30, 0);
+    error_stop = i2c_wait_stop(adapter, 30, 0);
     check(pci_bar + REG_CTRL);
     check(pci_bar + REG_STAT);
+    dev_dbg(&adapter->dev, "exit(%d) error_stop %d: %s I2C_%d, portid %2d|@ 0x%2.2X|f 0x%4.4X|(%d)%-5s| (%d)%-10s|CMD 0x%2.2X\n", 
+           error, error_stop, __func__, master_bus, portid, addr, flags, rw, rw == 1 ? "READ " : "WRITE",
+           size,
+           size == 0 ? "QUICK" :
+           size == 1 ? "BYTE" :
+           size == 2 ? "BYTE_DATA" :
+           size == 3 ? "WORD_DATA" :
+           size == 4 ? "PROC_CALL" :
+           size == 5 ? "BLOCK_DATA" :
+           size == 8 ? "I2C_BLOCK_DATA" :  "ERROR", cmd);
 #ifdef DEBUG_KERN
     printk(KERN_INFO "END --- Error code  %d", error);
 #endif
