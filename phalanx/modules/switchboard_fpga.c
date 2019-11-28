@@ -23,7 +23,7 @@
  */
 
 #ifndef TEST_MODE
-#define MOD_VERSION "0.5.6"
+#define MOD_VERSION "0.5.7"
 #else
 #define MOD_VERSION "TEST"
 #endif
@@ -2200,12 +2200,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
     nack_retry[master_bus - 1] = 0;
     need_retry[master_bus - 1] = 0;
     status_debug_en[master_bus -1] = 0;
-    /* If the transaction was I2C_BLOCK_DATA, breakdown into BYTE_DATA */
-    if(size == 8){
-        error = smbus_access_i2c_block_to_byte(adapter, addr, flags, rw, cmd, size, data);
-    }else{
-        error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
-    }
+    error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
 
     if((nack_retry[master_bus - 1]==1)&&(need_retry[master_bus - 1]==1))
         retry = 2000;
@@ -2218,11 +2213,7 @@ static int fpga_i2c_access(struct i2c_adapter *adapter, u16 addr,
         dev_dbg(&adapter->dev,"Error I2C_%d: %d, accessing dev 0x%2.2X CMD 0x%2.2X, retry=%d\n", 
                 master_bus, error, addr, cmd, retry);
         nack_retry[master_bus - 1] = 0;
-        if(size == 8){
-            error = smbus_access_i2c_block_to_byte(adapter, addr, flags, rw, cmd, size, data);
-        }else{
-            error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
-        }
+        error = smbus_access(adapter, addr, flags, rw, cmd, size, data);
         retry--;
     }
     nack_retry[master_bus - 1] = 0;
