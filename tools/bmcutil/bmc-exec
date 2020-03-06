@@ -15,10 +15,14 @@
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
 
+option="$1"
 command="$@"
 
 usage() {
-    echo "Usage: bmc-exec <command>"
+    echo "Usage: bmc-exec [option] <command>"
+    echo "options:"
+    echo "  -h, --help          : to print this message."
+    echo "  -f, --force         : do not prompt before overwriting."
     echo
 }
 
@@ -26,8 +30,7 @@ run_cmd() {
     echo "Run command: "$command
     echo
     ret=$(curl -m 5 --silent --header "Content-Type:application/json" -d "{\"data\": \"${command}\"}" http://240.1.1.1:8080/api/sys/raw)
-    if [ -z "$ret" ];
-    then
+    if [ -z "$ret" ]; then
         echo "Failed to connect on BMC"
     else
         echo $ret | python -c "import sys, json; k = json.load(sys.stdin)['result']; print k if type(k) is not list else '\n'.join(k);"
@@ -35,11 +38,37 @@ run_cmd() {
     return 0
 }
 
+function confirm() {
+    while true; do
+        read -r -n 1 -p "$* [y/n]: " yn
+        case $yn in
+            [yY]) echo ; return 0 ;;
+            [nN]) echo ; return 1 ;;
+            *) echo
+        esac
+    done
+}
+
 if [ $# -lt 1 ]; then
     usage
     exit -1
-else
-    run_cmd
 fi
+
+
+case $option in
+    -h|--help)
+        usage
+        ;;
+    -f|--force)
+        command="${@:2}"
+        run_cmd
+        ;;
+    *)
+        if [[ $command == *"power"* ]]; then
+            confirm "Do you need to run power command ?" || exit 1
+        fi
+        run_cmd
+        ;;
+esac
 
 exit $?
