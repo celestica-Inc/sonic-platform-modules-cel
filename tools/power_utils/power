@@ -16,6 +16,8 @@
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
 
 prog="$0"
+command="$1"
+component="$2"
 
 if [[ $EUID -ne 0 ]]; then
     echo "This script must be run as root"
@@ -23,7 +25,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 usage() {
-    echo "Usage: power <command>"
+    echo "Usage: power [option] <command>"
+    echo
+    echo "Options:"
+    echo "  -h, --help          : to print this message."
+    echo "  -f, --force         : do not prompt before overwriting."
     echo
     echo "Commands:"
     echo
@@ -31,6 +37,23 @@ usage() {
     echo
     echo "  cycle system : To reboot the whole system"
     echo
+}
+
+function confirm() {
+    while true; do
+        read -r -n 1 -p "$* [y/n]: " yn
+        case $yn in
+        [yY])
+            echo
+            return 0
+            ;;
+        [nN])
+            echo
+            return 1
+            ;;
+        *) echo ;;
+        esac
+    done
 }
 
 cpu_cycle() {
@@ -58,12 +81,7 @@ if [ $# -lt 1 ]; then
     exit -1
 fi
 
-command="$1"
-component="$2"
-shift
-
-case "$command" in
-cycle)
+run_cmd() {
     case "$component" in
     cpu)
         cpu_cycle
@@ -76,6 +94,19 @@ cycle)
         exit -1
         ;;
     esac
+}
+
+case "$command" in
+-h | --help)
+    usage
+    ;;
+-f | --force)
+    component="$3"
+    run_cmd
+    ;;
+cycle)
+    confirm "Do you need to power cycle?" || exit 1
+    run_cmd
     ;;
 *)
     usage
